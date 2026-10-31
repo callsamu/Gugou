@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import socket
 import threading
+from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
@@ -19,8 +20,9 @@ def test_queues_are_distinct() -> None:
 
 def test_celery_app_uses_json_serialization() -> None:
     app = create_app("test", QUEUES["download"])
-    assert app.conf.task_serializer == "json"
-    assert app.conf.task_create_missing_queues is True
+    conf = cast(Any, app.conf)  # pyright: ignore[reportUnknownMemberType]
+    assert conf.task_serializer == "json"
+    assert conf.task_create_missing_queues is True
 
 
 def test_task_names_are_namespaced() -> None:
@@ -30,7 +32,8 @@ def test_task_names_are_namespaced() -> None:
 
 def test_api_healthz() -> None:
     with TestClient(app) as client:
-        assert client.get("/healthz").json() == {"status": "ok"}
+        response = cast(Any, client.get("/healthz"))  # pyright: ignore[reportUnknownMemberType]
+        assert response.json() == {"status": "ok"}
 
 
 def test_sonic_client_speaks_the_ingest_protocol() -> None:

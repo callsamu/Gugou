@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from celery import Celery
-from kombu import Queue
+from typing import Any, cast
+
+from celery import Celery  # pyright: ignore[reportMissingTypeStubs]
+from kombu import Queue  # pyright: ignore[reportMissingTypeStubs]
 
 from common.config import settings
 
@@ -11,7 +13,8 @@ from common.config import settings
 def create_app(service: str, *queues: str) -> Celery:
     """Build a Celery app bound to the given queues."""
     app = Celery(service)
-    app.conf.update(
+    conf = cast(Any, app.conf)  # pyright: ignore[reportUnknownMemberType]
+    conf.update(
         broker_url=settings.broker_url,
         result_backend=settings.result_backend,
         task_serializer="json",

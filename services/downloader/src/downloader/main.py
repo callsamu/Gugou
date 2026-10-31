@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from common.celery_app import create_app
 from common.queues import QUEUES, TaskNames
@@ -35,15 +35,18 @@ def process(url: str, downloader: Downloader) -> Path | None:
 
 def forward(url: str, content_path: str, send: Callable[..., Any] | None = None) -> None:
     """Ask the extractor to parse the stored document."""
-    (send or app.send_task)(
+    sender = (
+        send if send is not None else cast(Callable[..., Any], app.send_task)  # pyright: ignore[reportUnknownMemberType]
+    )
+    sender(
         TaskNames.EXTRACT,
         kwargs={"url": url, "content_path": content_path},
         queue=QUEUES["extract"],
     )
 
 
-@app.task(name=TaskNames.DOWNLOAD)
-def download(url: str, tags: list[str] | None = None) -> dict:
+@cast(Any, app.task)(name=TaskNames.DOWNLOAD)  # pyright: ignore[reportUnknownMemberType]
+def download(url: str, tags: list[str] | None = None) -> dict[str, Any]:
     """Fetch the URL, store HTML bodies and forward them to the extractor.
 
     ``tags`` is part of the crawl request contract; indexing them is not

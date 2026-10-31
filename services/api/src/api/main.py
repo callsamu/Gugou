@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from celery.result import AsyncResult
+from typing import Any, cast
+
+from celery.result import AsyncResult  # pyright: ignore[reportMissingTypeStubs]
 from fastapi import FastAPI
 
 from common.celery_app import create_app
@@ -21,17 +23,20 @@ def healthz() -> dict[str, str]:
 @app.post("/crawl", status_code=202)
 def crawl(request: CrawlRequest) -> dict[str, str]:
     """Queue a URL for download -> extract -> index."""
-    result = celery.send_task(
-        TaskNames.DOWNLOAD,
-        kwargs={"url": str(request.url), "tags": request.tags},
-        queue=QUEUES["download"],
+    result = cast(
+        Any,
+        celery.send_task(  # pyright: ignore[reportUnknownMemberType]
+            TaskNames.DOWNLOAD,
+            kwargs={"url": str(request.url), "tags": request.tags},
+            queue=QUEUES["download"],
+        ),
     )
     return {"task_id": result.id, "url": str(request.url), "status": "PENDING"}
 
 
 @app.get("/tasks/{task_id}")
 def task_status(task_id: str) -> dict[str, object]:
-    result = AsyncResult(task_id, app=celery)
+    result = cast(Any, AsyncResult(task_id, app=celery))
     return {
         "task_id": task_id,
         "status": result.state,

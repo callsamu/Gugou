@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime
-from enum import StrEnum
+from enum import Enum, StrEnum
 from functools import lru_cache
 
 from sqlalchemy import Column
@@ -50,6 +50,11 @@ class UrlState(StrEnum):
     FAILED = "failed"
 
 
+def _url_state_values(enum_cls: type[Enum]) -> list[str]:
+    """Persist enum member values rather than their names."""
+    return [str(member.value) for member in enum_cls]
+
+
 class Url(SQLModel, table=True):
     """A URL known to the downloader."""
 
@@ -61,7 +66,7 @@ class Url(SQLModel, table=True):
         sa_column=Column(
             SAEnum(
                 UrlState,
-                values_callable=lambda enum_cls: [member.value for member in enum_cls],
+                values_callable=_url_state_values,
                 name="urlstate",
             ),
             nullable=False,

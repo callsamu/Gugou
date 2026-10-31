@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from sqlmodel import Session, select
 
@@ -66,15 +66,18 @@ def process(url: str, content_path: str | None, extractor: Extractor) -> Extract
 
 def forward(extracted: Extracted, send: Callable[..., Any] | None = None) -> None:
     """Queue an extracted document for indexing."""
-    (send or app.send_task)(
+    sender = (
+        send if send is not None else cast(Callable[..., Any], app.send_task)  # pyright: ignore[reportUnknownMemberType]
+    )
+    sender(
         TaskNames.INDEX,
         kwargs={"payload": extracted.model_dump()},
         queue=QUEUES["index"],
     )
 
 
-@app.task(name=TaskNames.EXTRACT)
-def extract(url: str, content_path: str | None = None) -> dict | None:
+@cast(Any, app.task)(name=TaskNames.EXTRACT)  # pyright: ignore[reportUnknownMemberType]
+def extract(url: str, content_path: str | None = None) -> dict[str, Any] | None:
     """Parse the stored HTML and forward the structured result to the indexer.
 
     Returns None when the content was already processed and skipped.
