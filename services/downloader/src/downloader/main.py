@@ -43,8 +43,12 @@ def forward(url: str, content_path: str, send: Callable[..., Any] | None = None)
 
 
 @app.task(name=TaskNames.DOWNLOAD)
-def download(url: str) -> dict:
-    """Fetch the URL, store HTML bodies and forward them to the extractor."""
+def download(url: str, tags: list[str] | None = None) -> dict:
+    """Fetch the URL, store HTML bodies and forward them to the extractor.
+
+    ``tags`` is part of the crawl request contract; indexing them is not
+    implemented yet, so it is accepted and ignored here.
+    """
     content_path = process(url, Downloader())
     if content_path is not None:
         forward(url, str(content_path))
