@@ -62,3 +62,22 @@ def test_from_file_parses_a_stored_document(tmp_path: Path) -> None:
 
     assert extracted.title == "Example"
     assert extracted.links == ["/one", "https://example.com/two"]
+
+
+def test_content_hash_is_deterministic() -> None:
+    assert Extractor().content_hash(None) is None
+    assert Extractor().content_hash("") is None
+
+
+def test_content_hash_digest_matches_body(tmp_path: Path) -> None:
+    import hashlib
+
+    path = tmp_path / "page.html"
+    body = b"<html>body</html>"
+    path.write_bytes(body)
+
+    assert Extractor().content_hash(path) == hashlib.sha256(body).hexdigest()
+
+
+def test_content_hash_returns_none_when_missing(tmp_path: Path) -> None:
+    assert Extractor().content_hash(tmp_path / "missing.html") is None

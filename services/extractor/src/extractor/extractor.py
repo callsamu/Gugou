@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -37,6 +38,15 @@ class Extractor:
             text=soup.get_text(" ", strip=True),
             links=[str(anchor["href"]) for anchor in soup.find_all("a", href=True)],
         )
+
+    def content_hash(self, path: str | Path | None) -> str | None:
+        """Hash the raw bytes of the stored document, or None when missing."""
+        if not path:
+            return None
+        file = Path(path)
+        if not file.exists():
+            return None
+        return hashlib.sha256(file.read_bytes()).hexdigest()
 
     def from_file(self, url: str, path: str | Path | None) -> Extracted:
         """Load and parse a document stored at ``path``."""

@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     downloader_db_url: str = "sqlite:///downloader.db"
+    extractor_db_url: str = "sqlite:///extractor.db"
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str | None = None
     celery_result_backend: str | None = None
