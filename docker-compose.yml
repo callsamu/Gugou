@@ -31,6 +31,7 @@ services:
       SONIC_PORT: "1491"
       SONIC_PASSWORD: SecretPassword
       RAW_STORAGE_DIR: /app/data/raw
+      DEBUG: ${DEBUG:-false}
     volumes: ["raw-data:/app/data/raw"]
     depends_on:
       redis: { condition: service_healthy }

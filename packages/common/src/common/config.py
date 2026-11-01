@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     service_name: str = "engsoftware"
+    debug: bool = False
     log_level: str = "INFO"
 
     downloader_db_url: str = "sqlite:///downloader.db"

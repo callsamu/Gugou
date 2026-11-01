@@ -122,6 +122,18 @@ def test_has_seen_compares_the_url_hash(tmp_path: Path) -> None:
     assert not downloader.has_seen("https://example.com/other")
 
 
+def test_url_count_tracks_records(tmp_path: Path) -> None:
+    engine = _engine(tmp_path / "urls.db")
+    downloader = Downloader(tmp_path / "raw", engine=engine)
+
+    assert downloader.url_count() == 0
+
+    downloader.create_url(URL)
+    downloader.create_url("https://example.com/other")
+
+    assert downloader.url_count() == 2
+
+
 @pytest.mark.parametrize(
     "content_type",
     ["text/html", "text/html; charset=utf-8", "application/xhtml+xml", "TEXT/HTML"],

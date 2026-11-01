@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from common.celery_app import create_app
+from common.config import settings
 from common.queues import QUEUES, TaskNames
 from downloader.downloader import Downloader
 
@@ -15,11 +16,17 @@ logger = logging.getLogger(__name__)
 
 app = create_app("downloader", QUEUES["download"])
 
+#: Maximum number of URLs recorded while debug mode is enabled.
+DEBUG_URL_LIMIT = 10
+
 
 def process(url: str, downloader: Downloader) -> Path | None:
     """Download ``url``, record its status and return the stored path when HTML."""
     if downloader.has_seen(url):
         logger.info("skipping %s: url already seen", url)
+        return None
+    if settings.debug and downloader.url_count() >= DEBUG_URL_LIMIT:
+        logger.info("debug mode: url limit of %d reached, skipping %s", DEBUG_URL_LIMIT, url)
         return None
     downloader.create_url(url)
     try:

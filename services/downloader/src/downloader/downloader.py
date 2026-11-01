@@ -9,8 +9,9 @@ from typing import Final
 from urllib.parse import urlsplit
 
 import httpx
+from sqlalchemy import func
 from sqlalchemy.engine import Engine
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from common.config import settings
 from downloader.db import Url, UrlState, create_db, get_engine, hash_url
@@ -89,6 +90,12 @@ class Downloader:
         self._ensure_schema()
         with Session(self.engine) as session:
             return session.get(Url, hash_url(url)) is not None
+
+    def url_count(self) -> int:
+        """Return the number of URLs recorded in the database."""
+        self._ensure_schema()
+        with Session(self.engine) as session:
+            return int(session.exec(select(func.count()).select_from(Url)).one())
 
     def create_url(self, url: str) -> Url:
         """Record ``url`` as pending, resetting an existing record for a re-crawl."""

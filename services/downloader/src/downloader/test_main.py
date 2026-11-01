@@ -9,6 +9,7 @@ import httpx
 import pytest
 from sqlmodel import Session, create_engine
 
+from common.config import settings
 from common.queues import QUEUES, TaskNames
 from downloader import main
 from downloader.db import Url, UrlState, create_db, hash_url
@@ -59,6 +60,50 @@ def test_html_is_stored_completed_and_forwarded(tmp_path: Path) -> None:
     assert sent[0]["args"] == (TaskNames.EXTRACT,)
     assert sent[0]["queue"] == QUEUES["extract"]
     assert sent[0]["kwargs"] == {"url": URL, "content_path": str(expected)}
+
+
+def test_debug_mode_limits_urls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    raw_dir = tmp_path / "raw"
+    downloader = _downloader(raw_dir)
+    for index in range(main.DEBUG_URL_LIMIT):
+        downloader.create_url(f"https://example.com/{index}")
+    monkeypatch.setattr(settings, "debug", True)
+
+    content_path = main.process(URL, downloader)
+
+    assert content_path is None
+    assert not raw_dir.exists()
+    assert not downloader.has_seen(URL)
+
+
+def test_debug_mode_allows_urls_below_the_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw_dir = tmp_path / "raw"
+    downloader = _downloader(raw_dir)
+    for index in range(main.DEBUG_URL_LIMIT - 1):
+        downloader.create_url(f"https://example.com/{index}")
+    monkeypatch.setattr(settings, "debug", True)
+
+    content_path = main.process(URL, downloader)
+
+    assert content_path is not None
+    assert _state(downloader) is UrlState.COMPLETED
+
+
+def test_debug_limit_is_disabled_when_debug_is_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw_dir = tmp_path / "raw"
+    downloader = _downloader(raw_dir)
+    for index in range(main.DEBUG_URL_LIMIT):
+        downloader.create_url(f"https://example.com/{index}")
+    monkeypatch.setattr(settings, "debug", False)
+
+    content_path = main.process(URL, downloader)
+
+    assert content_path is not None
+    assert _state(downloader) is UrlState.COMPLETED
 
 
 def test_seen_url_is_skipped_without_fetching(tmp_path: Path) -> None:
