@@ -17,6 +17,7 @@ COPY packages/common/pyproject.toml packages/common/pyproject.toml
 COPY services/api/pyproject.toml services/api/pyproject.toml
 COPY services/downloader/pyproject.toml services/downloader/pyproject.toml
 COPY services/extractor/pyproject.toml services/extractor/pyproject.toml
+COPY services/frontier/pyproject.toml services/frontier/pyproject.toml
 COPY services/searcher/pyproject.toml services/searcher/pyproject.toml
 
 # Dependencies first (project sources are not needed yet) so this layer stays cached.

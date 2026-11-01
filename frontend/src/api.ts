@@ -12,9 +12,8 @@ export interface SearchResponse {
 }
 
 export interface CrawlResponse {
-  task_id: string;
   url: string;
-  status: string;
+  queued: boolean;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

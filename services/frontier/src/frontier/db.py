@@ -1,4 +1,4 @@
-"""Downloader-owned database: URL records and engine setup."""
+"""Frontier-owned database: URL records and engine setup."""
 
 from __future__ import annotations
 
@@ -28,11 +28,11 @@ def hash_url(url: str) -> str:
 def get_engine() -> Engine:
     """Build the SQLAlchemy engine described by the shared settings."""
     connect_args: dict[str, object] = {}
-    if settings.downloader_db_url.startswith("sqlite"):
-        # The API serves requests from a thread pool, so connections may move between threads.
+    if settings.frontier_db_url.startswith("sqlite"):
+        # The API and the frontier thread use separate sessions.
         connect_args["check_same_thread"] = False
     return create_engine(
-        settings.downloader_db_url,
+        settings.frontier_db_url,
         echo=settings.log_level.upper() == "DEBUG",
         connect_args=connect_args,
     )
@@ -43,7 +43,7 @@ def create_db(eng: Engine) -> None:
 
 
 class UrlState(StrEnum):
-    """Download lifecycle of a URL."""
+    """Lifecycle of a URL in the frontier."""
 
     PENDING = "pending"
     COMPLETED = "completed"
@@ -56,7 +56,7 @@ def _url_state_values(enum_cls: type[Enum]) -> list[str]:
 
 
 class Url(SQLModel, table=True):
-    """A URL known to the downloader."""
+    """A URL known to the frontier."""
 
     url_hash: str = Field(primary_key=True)
     url: str = Field(unique=True)

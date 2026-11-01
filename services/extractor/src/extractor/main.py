@@ -7,10 +7,11 @@ from collections.abc import Callable
 from typing import Any, cast
 from urllib.parse import urldefrag, urljoin, urlsplit
 
-from celery import chunks  # pyright: ignore[reportMissingTypeStubs]
+import httpx
 from sqlmodel import Session, select
 
 from common.celery_app import create_app
+from common.config import settings
 from common.contracts import Extracted
 from common.queues import QUEUES, TaskNames
 from extractor.db import Content, create_db, get_engine, hash_url
@@ -21,10 +22,6 @@ logger = logging.getLogger(__name__)
 app = create_app("extractor", QUEUES["extract"])
 
 HTTP_SCHEMES = frozenset({"http", "https"})
-
-#: URLs per chunk task. A chunk downloads its URLs sequentially; chunks run in
-#: parallel, so this caps the number of messages and the burst of parallelism.
-LINK_CHUNK_SIZE = 10
 
 
 def links_to_fetch(url: str, links: list[str]) -> list[str]:
@@ -45,41 +42,24 @@ def links_to_fetch(url: str, links: list[str]) -> list[str]:
     return targets
 
 
-def _signature(name: str, **kwargs: Any) -> Any:
-    """Create a Celery signature for a task name."""
-    return cast(Any, app.signature(name, **kwargs))  # pyright: ignore[reportUnknownMemberType]
-
-
-def forward_links(
-    url: str,
-    links: list[str],
-    signature: Callable[..., Any] | None = None,
-    chunks_factory: Callable[..., Any] | None = None,
-) -> None:
-    """Queue download work for the links found in ``url`` in chunks.
-
-    A chunk task downloads its URLs sequentially, and the chunks themselves
-    run in parallel. This avoids sending one broker message per link when a
-    page contains thousands of them.
-    """
+def forward_links(url: str, links: list[str]) -> None:
+    """Send the links found in ``url`` to the frontier."""
     targets = links_to_fetch(url, links)
     if not targets:
         return
 
-    make_signature = signature or _signature
-    make_chunks = chunks_factory or cast(Callable[..., Any], chunks)
-    download = make_signature(TaskNames.DOWNLOAD, queue=QUEUES["download"])
-    make_chunks(
-        download,
-        [(target,) for target in targets],
-        LINK_CHUNK_SIZE,
-    ).apply_async(queue=QUEUES["download"])
-    logger.info(
-        "queued %d link(s) from %s in chunks of %d",
-        len(targets),
-        url,
-        LINK_CHUNK_SIZE,
-    )
+    try:
+        response = httpx.post(
+            f"{settings.frontier_url.rstrip('/')}/urls",
+            json={"urls": targets},
+            timeout=settings.frontier_timeout,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        logger.error("failed to send links from %s to the frontier: %s", url, exc)
+        raise
+
+    logger.info("sent %d link(s) from %s to the frontier", len(targets), url)
 
 
 def _already_seen(content_hash: str | None) -> bool:

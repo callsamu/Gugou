@@ -70,11 +70,18 @@ export function CrawlPage(_props: RoutableProps) {
         {error && <p class="mt-6 text-red-600">{error}</p>}
 
         {result && (
-          <div class="mt-6 rounded-xl border border-green-200 bg-green-50 p-4 text-green-900">
-            <p class="font-medium">Queued!</p>
+          <div
+            class={`mt-6 rounded-xl border p-4 ${
+              result.queued
+                ? "border-green-200 bg-green-50 text-green-900"
+                : "border-amber-200 bg-amber-50 text-amber-900"
+            }`}
+          >
+            <p class="font-medium">{result.queued ? "Queued!" : "Already known"}</p>
             <p class="mt-1 text-sm">
-              Task <code class="rounded bg-white px-1">{result.task_id}</code> is{" "}
-              {result.status.toLowerCase()}.
+              {result.queued
+                ? "The frontier will download, parse and index this page."
+                : "This URL is already in the frontier."}
             </p>
           </div>
         )}

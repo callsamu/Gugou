@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import httpx
 from celery.exceptions import TimeoutError as CeleryTimeoutError  # pyright: ignore[reportMissingTypeStubs]
 from celery.result import AsyncResult  # pyright: ignore[reportMissingTypeStubs]
 from fastapi import FastAPI, HTTPException, Query
@@ -16,7 +17,6 @@ from common.queues import QUEUES, TaskNames
 
 celery = create_app(
     "api",
-    QUEUES["download"],
     QUEUES["extract"],
     QUEUES["index"],
     QUEUES["search"],
@@ -36,17 +36,20 @@ def healthz() -> dict[str, str]:
 
 
 @app.post("/crawl", status_code=202)
-def crawl(request: CrawlRequest) -> dict[str, str]:
-    """Queue a URL for download -> extract -> index."""
-    result = cast(
-        Any,
-        celery.send_task(  # pyright: ignore[reportUnknownMemberType]
-            TaskNames.DOWNLOAD,
-            kwargs={"url": str(request.url), "tags": request.tags},
-            queue=QUEUES["download"],
-        ),
-    )
-    return {"task_id": result.id, "url": str(request.url), "status": "PENDING"}
+def crawl(request: CrawlRequest) -> dict[str, object]:
+    """Add a URL to the frontier queue."""
+    try:
+        response = httpx.post(
+            f"{settings.frontier_url.rstrip('/')}/urls",
+            json={"urls": [str(request.url)]},
+            timeout=settings.frontier_timeout,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"frontier unavailable: {exc}") from exc
+
+    payload = response.json()
+    return {"url": str(request.url), "queued": bool(payload.get("queued"))}
 
 
 @app.get("/tasks/{task_id}")

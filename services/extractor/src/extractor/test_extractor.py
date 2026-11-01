@@ -36,9 +36,9 @@ def test_extract_without_a_title() -> None:
     assert extracted.title is None
 
 
-def test_extract_keeps_only_headings_and_paragraphs() -> None:
+def test_extract_keeps_only_title_h1_and_paragraphs() -> None:
     html = """
-    <html><body>
+    <html><head><title>Page title</title></head><body>
       <h1>Main heading</h1>
       <div>navigation noise</div>
       <p>First <b>paragraph</b>.</p>
@@ -50,7 +50,8 @@ def test_extract_keeps_only_headings_and_paragraphs() -> None:
 
     extracted = Extractor().extract(URL, html)
 
-    assert extracted.text == "Main heading\nFirst paragraph.\nSubheading\nSecond paragraph."
+    assert extracted.text == "Page title\nMain heading\nFirst paragraph.\nSecond paragraph."
+    assert "Subheading" not in extracted.text
     assert "noise" not in extracted.text
 
 

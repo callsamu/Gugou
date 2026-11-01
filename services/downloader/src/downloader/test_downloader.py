@@ -2,25 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
 import httpx
 import pytest
-from sqlalchemy.engine import Engine
-from sqlmodel import Session, create_engine, select
 
-from downloader.db import Url, UrlState, create_db, hash_url
 from downloader.downloader import Downloader, FetchResult
 
 URL = "https://example.com/article"
 BODY = b"<html>hi</html>"
-
-
-def _engine(path: Path) -> Engine:
-    engine = create_engine(f"sqlite:///{path}")
-    create_db(engine)
-    return engine
 
 
 def _client(
@@ -73,97 +65,14 @@ def test_fetch_logs_failure(tmp_path: Path, caplog: pytest.LogCaptureFixture) ->
     assert f"fetch failed for {URL}" in caplog.text
 
 
-def test_saving_a_url_logs_its_state(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    engine = _engine(tmp_path / "urls.db")
-    downloader = Downloader(tmp_path / "raw", engine=engine)
-
-    with caplog.at_level(logging.INFO):
-        downloader.create_url(URL)
-
-    assert f"saved url {URL} to the database" in caplog.text
-    assert "state=pending" in caplog.text
-
-
 def test_store_writes_a_hashed_file_under_raw_dir(tmp_path: Path) -> None:
     downloader = Downloader(tmp_path / "raw", client=_client())
 
     path = downloader.store(downloader.fetch(URL))
 
-    expected = tmp_path / "raw" / f"{hash_url(URL)[:16]}.html"
+    expected = tmp_path / "raw" / f"{hashlib.sha256(URL.encode()).hexdigest()[:16]}.html"
     assert path == expected
     assert path.read_bytes() == BODY
-
-
-def test_create_url_records_a_pending_url(tmp_path: Path) -> None:
-    engine = _engine(tmp_path / "urls.db")
-    downloader = Downloader(tmp_path / "raw", engine=engine)
-
-    record = downloader.create_url(URL)
-
-    assert record.url_hash == hash_url(URL)
-    assert record.url == URL
-    assert record.host == "example.com"
-    assert record.state is UrlState.PENDING
-    assert record.createdAt.tzinfo is not None
-
-    with Session(engine) as session:
-        assert session.get(Url, hash_url(URL)) is not None
-
-
-def test_mark_completed_and_failed_update_the_state(tmp_path: Path) -> None:
-    engine = _engine(tmp_path / "urls.db")
-    downloader = Downloader(tmp_path / "raw", engine=engine)
-    downloader.create_url(URL)
-
-    downloader.mark_completed(URL)
-    with Session(engine) as session:
-        record = session.get(Url, hash_url(URL))
-        assert record is not None
-        assert record.state is UrlState.COMPLETED
-
-    downloader.mark_failed(URL)
-    with Session(engine) as session:
-        record = session.get(Url, hash_url(URL))
-        assert record is not None
-        assert record.state is UrlState.FAILED
-
-
-def test_recording_the_same_url_twice_keeps_one_row(tmp_path: Path) -> None:
-    engine = _engine(tmp_path / "urls.db")
-    downloader = Downloader(tmp_path / "raw", engine=engine)
-
-    downloader.create_url(URL)
-    downloader.mark_completed(URL)
-    downloader.create_url(URL)
-
-    with Session(engine) as session:
-        records = session.exec(select(Url)).all()
-        assert len(records) == 1
-        assert records[0].state is UrlState.PENDING
-
-
-def test_has_seen_compares_the_url_hash(tmp_path: Path) -> None:
-    engine = _engine(tmp_path / "urls.db")
-    downloader = Downloader(tmp_path / "raw", engine=engine)
-
-    assert not downloader.has_seen(URL)
-
-    downloader.create_url(URL)
-
-    assert downloader.has_seen(URL)
-    assert not downloader.has_seen("https://example.com/other")
-
-
-def test_url_count_tracks_records(tmp_path: Path) -> None:
-    engine = _engine(tmp_path / "urls.db")
-    downloader = Downloader(tmp_path / "raw", engine=engine)
-
-    assert downloader.url_count() == 0
-
-    downloader.create_url(URL)
-    downloader.create_url("https://example.com/other")
-
-    assert downloader.url_count() == 2
 
 
 @pytest.mark.parametrize(

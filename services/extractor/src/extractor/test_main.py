@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, create_engine, select
 
+from common.config import settings
 from common.contracts import Extracted
 from common.queues import QUEUES, TaskNames
 from extractor import main
@@ -148,45 +149,26 @@ def test_links_to_fetch_resolves_filters_and_dedupes() -> None:
     ]
 
 
-def test_forward_links_sends_download_chunks() -> None:
-    signatures: list[dict[str, Any]] = []
-    chunk_calls: list[dict[str, Any]] = []
+def test_forward_links_posts_to_the_frontier(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
 
-    def fake_signature(name: str, **kwargs: Any) -> dict[str, Any]:
-        item = {"name": name, **kwargs}
-        signatures.append(item)
-        return item
+    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+        calls.append({"url": url, **kwargs})
+        return httpx.Response(
+            202,
+            json={"queued": 2, "skipped": 0},
+            request=httpx.Request("POST", url),
+        )
 
-    class FakeChunks:
-        def __init__(
-            self,
-            task: dict[str, Any],
-            items: Iterable[tuple[str, ...]],
-            size: int,
-        ) -> None:
-            self.task = task
-            self.items = list(items)
-            self.size = size
+    monkeypatch.setattr(httpx, "post", fake_post)
 
-        def apply_async(self, **options: Any) -> None:
-            chunk_calls.append(
-                {"task": self.task, "items": self.items, "size": self.size, **options}
-            )
+    main.forward_links(URL, ["/one", "https://example.com/two", "/one", "mailto:hi@example.com"])
 
-    main.forward_links(
-        URL,
-        ["/one", "https://example.com/two", "/one", "mailto:hi@example.com"],
-        signature=fake_signature,
-        chunks_factory=FakeChunks,
-    )
-
-    assert signatures == [{"name": TaskNames.DOWNLOAD, "queue": QUEUES["download"]}]
-    assert chunk_calls == [
+    assert calls == [
         {
-            "task": signatures[0],
-            "items": [("https://example.com/one",), ("https://example.com/two",)],
-            "size": main.LINK_CHUNK_SIZE,
-            "queue": QUEUES["download"],
+            "url": f"{settings.frontier_url}/urls",
+            "json": {"urls": ["https://example.com/one", "https://example.com/two"]},
+            "timeout": settings.frontier_timeout,
         }
     ]
 

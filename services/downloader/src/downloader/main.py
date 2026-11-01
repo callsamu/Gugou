@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, cast
 
 from common.celery_app import create_app
-from common.config import settings
 from common.queues import QUEUES, TaskNames
 from downloader.downloader import Downloader
 
@@ -16,31 +15,14 @@ logger = logging.getLogger(__name__)
 
 app = create_app("downloader", QUEUES["download"])
 
-#: Maximum number of URLs recorded while debug mode is enabled.
-DEBUG_URL_LIMIT = 10
-
 
 def process(url: str, downloader: Downloader) -> Path | None:
-    """Download ``url``, record its status and return the stored path when HTML."""
-    if downloader.has_seen(url):
-        logger.info("skipping %s: url already seen", url)
+    """Fetch ``url`` and return the stored path when the response is HTML."""
+    fetched = downloader.fetch(url)
+    if not downloader.is_html(fetched):
+        logger.info("not forwarding %s: content type %r is not HTML", url, fetched.content_type)
         return None
-    if settings.debug and downloader.url_count() >= DEBUG_URL_LIMIT:
-        logger.info("debug mode: url limit of %d reached, skipping %s", DEBUG_URL_LIMIT, url)
-        return None
-    downloader.create_url(url)
-    try:
-        fetched = downloader.fetch(url)
-        if not downloader.is_html(fetched):
-            logger.info("not forwarding %s: content type %r is not HTML", url, fetched.content_type)
-            downloader.mark_failed(url)
-            return None
-        content_path = downloader.store(fetched)
-    except Exception:
-        downloader.mark_failed(url)
-        raise
-    downloader.mark_completed(url)
-    return content_path
+    return downloader.store(fetched)
 
 
 def forward(url: str, content_path: str, send: Callable[..., Any] | None = None) -> None:

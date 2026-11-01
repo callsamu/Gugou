@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
 
-    downloader_db_url: str = "sqlite:///downloader.db"
+    frontier_db_url: str = "sqlite:///frontier.db"
     extractor_db_url: str = "sqlite:///extractor.db"
     documents_db_url: str = "sqlite:///documents.db"
     redis_url: str = "redis://localhost:6379/0"
@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     download_timeout: float = 30.0
     download_max_bytes: int = 5 * 1024 * 1024
     search_timeout: float = 10.0
+    frontier_url: str = "http://localhost:8001"
+    frontier_timeout: float = 10.0
     user_agent: str = "obuscador-downloader/0.1"
 
     raw_storage_dir: str = "data/raw"

@@ -1,4 +1,4 @@
-.PHONY: help install lock fmt lint test api frontend downloader extractor searcher up down logs clean
+.PHONY: help install lock fmt lint test api frontend downloader extractor frontier searcher up down logs clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -32,6 +32,9 @@ downloader: ## Run the downloader worker
 
 extractor: ## Run the extractor worker
 	uv run celery -A extractor.main:app worker -Q extract -l info
+
+frontier: ## Run the URL frontier API (http://localhost:8001)
+	uv run uvicorn frontier.main:app --reload --port 8001
 
 searcher: ## Run the search worker (index + search queues)
 	uv run celery -A searcher.main:app worker -Q index,search -l info

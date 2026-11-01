@@ -13,6 +13,7 @@ members = [
     "downloader",
     "engsoftware",
     "extractor",
+    "frontier",
     "searcher",
 ]
 
@@ -66,6 +67,7 @@ source = { editable = "services/api" }
 dependencies = [
     { name = "common" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -73,6 +75,7 @@ dependencies = [
 requires-dist = [
     { name = "common", editable = "packages/common" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
 
@@ -288,16 +291,12 @@ source = { editable = "services/downloader" }
 dependencies = [
     { name = "common" },
     { name = "httpx" },
-    { name = "sqlalchemy" },
-    { name = "sqlmodel" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "common", editable = "packages/common" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-    { name = "sqlmodel", specifier = ">=0.0.48" },
 ]
 
 [[package]]
@@ -330,12 +329,14 @@ source = { editable = "services/extractor" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "common" },
+    { name = "httpx" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "common", editable = "packages/common" },
+    { name = "httpx", specifier = ">=0.27" },
 ]
 
 [[package]]
@@ -353,6 +354,27 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9a/40/a212bffb9809afb9a94b250f11e0c29fd8b2589ec92e4bedd1cc7adf9938/fastapi-0.159.1.tar.gz", hash = "sha256:b45b1ec57f3aa4d2f80f09bfbcf068b46764a2ee892e56753f35bb3d9d845ce2", size = 522004, upload-time = "2026-10-21T20:59:29.054Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8d/35/b03b5df04a1a8ee400c9df4b1795af84370b2bb6f1cc4be57c0b79688d00/fastapi-0.159.1-py3-none-any.whl", hash = "sha256:49b94c29afec2fca1390e9c39be202c59755d5cda8e4f1148a133761e4313e7e", size = 149604, upload-time = "2026-10-21T20:59:27.58Z" },
+]
+
+[[package]]
+name = "frontier"
+version = "0.1.0"
+source = { editable = "services/frontier" }
+dependencies = [
+    { name = "common" },
+    { name = "fastapi" },
+    { name = "sqlalchemy" },
+    { name = "sqlmodel" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "common", editable = "packages/common" },
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "sqlmodel", specifier = ">=0.0.48" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
 
 [[package]]
