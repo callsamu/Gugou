@@ -51,10 +51,13 @@ services:
     depends_on:
       redis: { condition: service_healthy }
 
-  indexer:
-    build: { context: ., args: { SERVICE: indexer } }
-    command: celery -A indexer.main:app worker -Q index -l info
-    environment: *env
+  searcher:
+    build: { context: ., args: { SERVICE: searcher } }
+    command: celery -A searcher.main:app worker -Q index,search -l info
+    environment:
+      <<: *env
+      DOCUMENTS_DB_URL: sqlite:////app/data/documents/documents.db
+    volumes: ["documents-data:/app/data/documents"]
     depends_on:
       redis: { condition: service_healthy }
       sonic: { condition: service_started }
@@ -62,3 +65,4 @@ services:
 volumes:
   raw-data:
   sonic-data:
+  documents-data:

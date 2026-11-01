@@ -1,4 +1,4 @@
-.PHONY: help install lock fmt lint test api downloader extractor indexer up down logs clean
+.PHONY: help install lock fmt lint test api frontend downloader extractor searcher up down logs clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -24,14 +24,17 @@ test: ## Run the test suite
 api: ## Run the HTTP API
 	uv run uvicorn api.main:app --reload
 
+frontend: ## Run the Preact frontend (http://localhost:5173)
+	cd frontend && npm run dev
+
 downloader: ## Run the downloader worker
 	uv run celery -A downloader.main:app worker -Q download -l info
 
 extractor: ## Run the extractor worker
 	uv run celery -A extractor.main:app worker -Q extract -l info
 
-indexer: ## Run the indexer worker
-	uv run celery -A indexer.main:app worker -Q index -l info
+searcher: ## Run the search worker (index + search queues)
+	uv run celery -A searcher.main:app worker -Q index,search -l info
 
 up: ## Start the whole stack with docker compose
 	docker compose up --build -d
