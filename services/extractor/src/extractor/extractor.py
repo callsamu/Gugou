@@ -9,6 +9,9 @@ from bs4 import BeautifulSoup
 
 from common.contracts import Extracted
 
+#: Only these blocks contribute to the indexed text; everything else is noise.
+CONTENT_SELECTOR = "title, h1, p"
+
 
 class Extractor:
     """Turn raw HTML files into the payload the searcher consumes.
@@ -32,10 +35,17 @@ class Extractor:
     def extract(self, url: str, html: str) -> Extracted:
         """Parse ``html`` into the contract shared with the searcher."""
         soup = BeautifulSoup(html, self.parser)
+        chunks: list[str] = []
+        for node in soup.select(CONTENT_SELECTOR):
+            for br in node.find_all("br"):
+                br.replace_with(" ")
+            text = " ".join(node.get_text("").split())
+            if text:
+                chunks.append(text)
         return Extracted(
             url=url,
             title=soup.title.get_text(strip=True) if soup.title else None,
-            text=soup.get_text(" ", strip=True),
+            text="\n".join(chunks),
             links=[str(anchor["href"]) for anchor in soup.find_all("a", href=True)],
         )
 

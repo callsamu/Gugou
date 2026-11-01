@@ -36,6 +36,30 @@ def test_extract_without_a_title() -> None:
     assert extracted.title is None
 
 
+def test_extract_keeps_only_headings_and_paragraphs() -> None:
+    html = """
+    <html><body>
+      <h1>Main heading</h1>
+      <div>navigation noise</div>
+      <p>First <b>paragraph</b>.</p>
+      <ul><li>list noise</li></ul>
+      <h2>Subheading</h2>
+      <p>Second paragraph.</p>
+    </body></html>
+    """
+
+    extracted = Extractor().extract(URL, html)
+
+    assert extracted.text == "Main heading\nFirst paragraph.\nSubheading\nSecond paragraph."
+    assert "noise" not in extracted.text
+
+
+def test_extract_returns_empty_text_without_content_nodes() -> None:
+    extracted = Extractor().extract(URL, "<div>only noise</div>")
+
+    assert extracted.text == ""
+
+
 def test_load_reads_html_from_disk(tmp_path: Path) -> None:
     path = tmp_path / "page.html"
     path.write_text(HTML, encoding="utf-8")
