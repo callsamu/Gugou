@@ -18,6 +18,9 @@ app = create_app("downloader", QUEUES["download"])
 
 def process(url: str, downloader: Downloader) -> Path | None:
     """Download ``url``, record its status and return the stored path when HTML."""
+    if downloader.has_seen(url):
+        logger.info("skipping %s: url already seen", url)
+        return None
     downloader.create_url(url)
     try:
         fetched = downloader.fetch(url)

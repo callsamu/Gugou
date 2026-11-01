@@ -110,6 +110,18 @@ def test_recording_the_same_url_twice_keeps_one_row(tmp_path: Path) -> None:
         assert records[0].state is UrlState.PENDING
 
 
+def test_has_seen_compares_the_url_hash(tmp_path: Path) -> None:
+    engine = _engine(tmp_path / "urls.db")
+    downloader = Downloader(tmp_path / "raw", engine=engine)
+
+    assert not downloader.has_seen(URL)
+
+    downloader.create_url(URL)
+
+    assert downloader.has_seen(URL)
+    assert not downloader.has_seen("https://example.com/other")
+
+
 @pytest.mark.parametrize(
     "content_type",
     ["text/html", "text/html; charset=utf-8", "application/xhtml+xml", "TEXT/HTML"],

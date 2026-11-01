@@ -84,6 +84,12 @@ class Downloader:
         path.write_bytes(result.body)
         return path
 
+    def has_seen(self, url: str) -> bool:
+        """Return True when ``url`` already has a record in the database."""
+        self._ensure_schema()
+        with Session(self.engine) as session:
+            return session.get(Url, hash_url(url)) is not None
+
     def create_url(self, url: str) -> Url:
         """Record ``url`` as pending, resetting an existing record for a re-crawl."""
         return self._set_state(url, UrlState.PENDING)
@@ -96,10 +102,13 @@ class Downloader:
         """Flag a URL whose download or storage failed."""
         self._set_state(url, UrlState.FAILED)
 
-    def _set_state(self, url: str, state: UrlState) -> Url:
+    def _ensure_schema(self) -> None:
         if not self._schema_ready:
             create_db(self.engine)
             self._schema_ready = True
+
+    def _set_state(self, url: str, state: UrlState) -> Url:
+        self._ensure_schema()
 
         parts = urlsplit(url)
         with Session(self.engine) as session:

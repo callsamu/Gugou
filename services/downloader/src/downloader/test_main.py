@@ -61,6 +61,31 @@ def test_html_is_stored_completed_and_forwarded(tmp_path: Path) -> None:
     assert sent[0]["kwargs"] == {"url": URL, "content_path": str(expected)}
 
 
+def test_seen_url_is_skipped_without_fetching(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    downloader = _downloader(raw_dir)
+    downloader.create_url(URL)
+    downloader.mark_completed(URL)
+
+    content_path = main.process(URL, downloader)
+
+    assert content_path is None
+    assert not raw_dir.exists()
+    assert _state(downloader) is UrlState.COMPLETED
+
+
+def test_pending_url_is_skipped_without_resetting_state(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    downloader = _downloader(raw_dir)
+    downloader.create_url(URL)
+
+    content_path = main.process(URL, downloader)
+
+    assert content_path is None
+    assert not raw_dir.exists()
+    assert _state(downloader) is UrlState.PENDING
+
+
 def test_non_html_is_not_stored_and_marked_failed(tmp_path: Path) -> None:
     raw_dir = tmp_path / "raw"
     downloader = _downloader(raw_dir, body=b"%PDF-1.7", content_type="application/pdf")
