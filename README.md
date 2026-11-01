@@ -26,7 +26,7 @@ database (`DOCUMENTS_DB_URL`). Search tasks resolve the ids back to pages, so
 the API never talks to Sonic or SQLite directly.
 
 After extracting a page, the extractor resolves the links it found and queues
-them back to the downloader as a Celery group.
+them back to the downloader in chunked batches.
 
 ## Layout
 

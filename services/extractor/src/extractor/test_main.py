@@ -148,36 +148,47 @@ def test_links_to_fetch_resolves_filters_and_dedupes() -> None:
     ]
 
 
-def test_forward_links_sends_a_group_of_download_tasks() -> None:
+def test_forward_links_sends_download_chunks() -> None:
     signatures: list[dict[str, Any]] = []
-    groups: list[list[dict[str, Any]]] = []
+    chunk_calls: list[dict[str, Any]] = []
 
     def fake_signature(name: str, **kwargs: Any) -> dict[str, Any]:
         item = {"name": name, **kwargs}
         signatures.append(item)
         return item
 
-    class FakeGroup:
-        def __init__(self, items: Iterable[dict[str, Any]]) -> None:
+    class FakeChunks:
+        def __init__(
+            self,
+            task: dict[str, Any],
+            items: Iterable[tuple[str, ...]],
+            size: int,
+        ) -> None:
+            self.task = task
             self.items = list(items)
+            self.size = size
 
-        def apply_async(self) -> None:
-            groups.append(self.items)
+        def apply_async(self, **options: Any) -> None:
+            chunk_calls.append(
+                {"task": self.task, "items": self.items, "size": self.size, **options}
+            )
 
     main.forward_links(
         URL,
         ["/one", "https://example.com/two", "/one", "mailto:hi@example.com"],
         signature=fake_signature,
-        group_factory=FakeGroup,
+        chunks_factory=FakeChunks,
     )
 
-    assert [item["kwargs"]["url"] for item in signatures] == [
-        "https://example.com/one",
-        "https://example.com/two",
+    assert signatures == [{"name": TaskNames.DOWNLOAD, "queue": QUEUES["download"]}]
+    assert chunk_calls == [
+        {
+            "task": signatures[0],
+            "items": [("https://example.com/one",), ("https://example.com/two",)],
+            "size": main.LINK_CHUNK_SIZE,
+            "queue": QUEUES["download"],
+        }
     ]
-    assert groups == [signatures]
-    assert signatures[0]["name"] == TaskNames.DOWNLOAD
-    assert signatures[0]["queue"] == QUEUES["download"]
 
 
 def test_run_forwards_and_queues_links(monkeypatch: pytest.MonkeyPatch) -> None:

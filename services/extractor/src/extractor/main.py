@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any, cast
 from urllib.parse import urldefrag, urljoin, urlsplit
 
-from celery import group  # pyright: ignore[reportMissingTypeStubs]
+from celery import chunks  # pyright: ignore[reportMissingTypeStubs]
 from sqlmodel import Session, select
 
 from common.celery_app import create_app
@@ -22,18 +22,24 @@ app = create_app("extractor", QUEUES["extract"])
 
 HTTP_SCHEMES = frozenset({"http", "https"})
 
+#: URLs per chunk task. A chunk downloads its URLs sequentially; chunks run in
+#: parallel, so this caps the number of messages and the burst of parallelism.
+LINK_CHUNK_SIZE = 10
+
 
 def links_to_fetch(url: str, links: list[str]) -> list[str]:
     """Resolve, filter and deduplicate the links extracted from ``url``."""
     base, _ = urldefrag(url)
     targets: list[str] = []
+    seen: set[str] = set()
 
     for link in links:
         target, _ = urldefrag(urljoin(base, link.strip()))
-        if not target or target == base:
+        if not target or target == base or target in seen:
             continue
         if urlsplit(target).scheme.lower() not in HTTP_SCHEMES:
             continue
+        seen.add(target)
         targets.append(target)
 
     return targets
@@ -48,24 +54,32 @@ def forward_links(
     url: str,
     links: list[str],
     signature: Callable[..., Any] | None = None,
-    group_factory: Callable[..., Any] | None = None,
+    chunks_factory: Callable[..., Any] | None = None,
 ) -> None:
-    """Queue a Celery group of download tasks for the links found in ``url``."""
+    """Queue download work for the links found in ``url`` in chunks.
+
+    A chunk task downloads its URLs sequentially, and the chunks themselves
+    run in parallel. This avoids sending one broker message per link when a
+    page contains thousands of them.
+    """
     targets = links_to_fetch(url, links)
     if not targets:
         return
 
     make_signature = signature or _signature
-    make_group = group_factory or cast(Callable[..., Any], group)
-    make_group(
-        make_signature(
-            TaskNames.DOWNLOAD,
-            kwargs={"url": target},
-            queue=QUEUES["download"],
-        )
-        for target in targets
-    ).apply_async()
-    logger.info("queued %d link(s) from %s for download", len(targets), url)
+    make_chunks = chunks_factory or cast(Callable[..., Any], chunks)
+    download = make_signature(TaskNames.DOWNLOAD, queue=QUEUES["download"])
+    make_chunks(
+        download,
+        [(target,) for target in targets],
+        LINK_CHUNK_SIZE,
+    ).apply_async(queue=QUEUES["download"])
+    logger.info(
+        "queued %d link(s) from %s in chunks of %d",
+        len(targets),
+        url,
+        LINK_CHUNK_SIZE,
+    )
 
 
 def _already_seen(content_hash: str | None) -> bool:
