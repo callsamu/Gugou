@@ -2,59 +2,72 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
-from common.contracts import SearchResponse
+from common.contracts import Extracted, SearchResponse
+from common.meilisearch import SearchError
 from searcher import main
 
 
-class FakeSonic:
-    def __init__(self, ids: list[str]) -> None:
-        self.ids = ids
-        self.calls: list[dict[str, object]] = []
+def test_find_builds_search_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
 
-    def __enter__(self) -> FakeSonic:
-        return self
+    def fake_search(query: str, limit: int = 20) -> list[dict[str, Any]]:
+        calls.append({"query": query, "limit": limit})
+        return [
+            {"id": "id1", "url": "https://example.com/article", "title": "Example"},
+            {"id": "id2", "url": None, "title": None},
+        ]
 
-    def __exit__(self, *exc_info: object) -> None:
-        pass
-
-    def query(self, collection: str, bucket: str, terms: str, limit: int = 20) -> list[str]:
-        self.calls.append(
-            {"collection": collection, "bucket": bucket, "terms": terms, "limit": limit}
-        )
-        return self.ids
-
-
-def test_find_resolves_ids_to_pages(monkeypatch: pytest.MonkeyPatch) -> None:
-    sonic = FakeSonic(["id1", "missing"])
-
-    def fake_sonic(*args: object, **kwargs: object) -> FakeSonic:
-        return sonic
-
-    def fake_metadata(ids: list[str]) -> dict[str, dict[str, str | None]]:
-        return {"id1": {"url": "https://example.com/article", "title": "Example"}}
-
-    monkeypatch.setattr(main, "SonicSearch", fake_sonic)
-    monkeypatch.setattr(main, "document_metadata", fake_metadata)
+    monkeypatch.setattr(main, "search_documents", fake_search)
 
     response = main.find("example", limit=5)
 
     assert isinstance(response, SearchResponse)
     assert response.query == "example"
+    assert [result.id for result in response.results] == ["id1", "id2"]
     assert [result.url for result in response.results] == [
         "https://example.com/article",
         None,
     ]
     assert [result.title for result in response.results] == ["Example", None]
-    assert sonic.calls[0]["limit"] == 5
+    assert calls == [{"query": "example", "limit": 5}]
 
 
 def test_find_wraps_backend_errors(monkeypatch: pytest.MonkeyPatch) -> None:
-    def broken_sonic(*args: object, **kwargs: object) -> FakeSonic:
-        raise OSError("connection refused")
+    def broken_search(query: str, limit: int = 20) -> list[dict[str, Any]]:
+        raise SearchError("connection refused")
 
-    monkeypatch.setattr(main, "SonicSearch", broken_sonic)
+    monkeypatch.setattr(main, "search_documents", broken_search)
 
     with pytest.raises(RuntimeError, match="search backend unavailable"):
         main.find("example")
+
+
+def test_index_document_adds_to_meilisearch(monkeypatch: pytest.MonkeyPatch) -> None:
+    added: list[dict[str, Any]] = []
+
+    def fake_add(document: dict[str, Any]) -> None:
+        added.append(document)
+
+    monkeypatch.setattr(main, "add_document", fake_add)
+
+    extracted = Extracted(
+        url="https://example.com/article",
+        title="Example",
+        text="Hello world",
+        links=[],
+    )
+    result = main.index_document(extracted.model_dump())
+
+    assert result["url"] == extracted.url
+    assert added == [
+        {
+            "id": result["id"],
+            "url": extracted.url,
+            "title": "Example",
+            "text": "Hello world",
+        }
+    ]

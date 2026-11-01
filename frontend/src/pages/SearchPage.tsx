@@ -100,7 +100,7 @@ export function SearchPage(_props: RoutableProps) {
 
         {status === "idle" && (
           <p class="mt-6 text-center text-sm text-slate-500">
-            Searches the Sonic index. Crawl pages first to fill it.
+            Searches the page index. Crawl pages first to fill it.
           </p>
         )}
       </section>

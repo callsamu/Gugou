@@ -22,7 +22,7 @@ class Extracted(BaseModel):
 
 
 class SearchResult(BaseModel):
-    """One Sonic hit, resolved back to the page it belongs to."""
+    """One search hit, resolved back to the page it belongs to."""
 
     model_config = ConfigDict(extra="forbid")
 

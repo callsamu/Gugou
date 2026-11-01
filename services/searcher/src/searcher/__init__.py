@@ -1,1 +1,1 @@
-"""Search service: indexes documents and answers Sonic queries."""
+"""Search service: indexes documents and answers Meilisearch queries."""

@@ -2,19 +2,22 @@
 
 Microservices scaffold: an HTTP API feeds a URL frontier, which drives a
 Celery pipeline of **downloader → extractor → searcher**, with Redis as broker
-and Sonic as the search engine.
+and Meilisearch as the search engine.
 
 ```
              POST /crawl
                  │
                  ▼
           ┌────────────┐  add URL   ┌────────────┐  download  ┌────────────┐  extract   ┌────────────┐  index   ┌────────────┐
-          │    api     │ ─────────▶ │  frontier  │ ─────────▶ │ downloader │ ─────────▶ │ extractor  │ ───────▶ │  searcher  │ ──▶ Sonic
+          │    api     │ ─────────▶ │  frontier  │ ─────────▶ │ downloader │ ─────────▶ │ extractor  │ ───────▶ │  searcher  │ ──▶ Meilisearch
           │ (FastAPI)  │   HTTP     │ (FastAPI)  │   queue    │  (Celery)  │   queue    │  (Celery)  │  queue   │  (Celery)  │
           └────────────┘            └────────────┘            └────────────┘            └────────────┘          └────────────┘
                  │                                                                          ▲
                  └──────────────────────── search task ─────────────────────────────────────┘
 ```
+
+The searcher stores each page in Meilisearch and answers search tasks with ranked
+hits. The API never talks to Meilisearch directly.
 
 Each service is independently deployable. Celery workers publish well-known task
 names (`common.queues.TaskNames`) onto well-known queues, so any stage can be
@@ -23,11 +26,6 @@ replaced or scaled on its own.
 The frontier owns the URL database and an in-memory FIFO queue. It sends one
 download task at a time and records each URL as pending, completed or failed.
 
-Sonic indexes the text and returns only object ids; the searcher derives that id
-from the URL hash and records it with the page URL and title in its own SQLite
-database (`DOCUMENTS_DB_URL`). Search tasks resolve the ids back to pages, so
-the API never talks to Sonic or SQLite directly.
-
 After extracting a page, the extractor resolves the links it found and sends
 them back to the frontier over HTTP.
 
@@ -35,15 +33,15 @@ them back to the frontier over HTTP.
 
 ```
 pyproject.toml            uv workspace root (dev tooling, ruff/mypy/pytest)
-packages/common/          shared settings, contracts, Celery factory, Sonic client (asonic)
+packages/common/          shared settings, contracts, Celery factory, Meilisearch client
 services/api/             FastAPI HTTP layer
 services/frontier/        URL database, FIFO queue and download dispatch
 services/downloader/      fetches URLs, stores raw HTML
 services/extractor/       parses HTML, sends discovered links to the frontier
-services/searcher/        indexes document text and answers Sonic queries
+services/searcher/        indexes document text and answers Meilisearch queries
 frontend/                 Preact + Tailwind search UI
 Dockerfile                one image, SERVICE build arg selects the member
-docker-compose.yml        redis + sonic + the five services
+docker-compose.yml        redis + meilisearch + the five services
 ```
 
 ## Getting started
@@ -51,11 +49,11 @@ docker-compose.yml        redis + sonic + the five services
 ```bash
 cp .env.example .env
 uv sync --all-packages        # install the workspace
-make up                      # docker compose: redis, sonic, 5 services
+make up                      # docker compose: redis, meilisearch, 5 services
 ```
 
-Or run the pieces locally (needs Redis and Sonic reachable at the addresses in
-`.env`):
+Or run the pieces locally (needs Redis and Meilisearch reachable at the addresses
+in `.env`):
 
 ```bash
 make api        # uvicorn api.main:app --reload
@@ -101,9 +99,9 @@ The frontier exposes its own small HTTP API on port 8001:
 ## Configuration
 
 All settings live in `packages/common/src/common/config.py` and are read from
-the environment (see `.env.example`): `REDIS_URL`, `SONIC_HOST`, `SONIC_PORT`, `SONIC_PASSWORD`,
-`RAW_STORAGE_DIR`, `DOWNLOAD_TIMEOUT`, `SEARCH_TIMEOUT`, `DOCUMENTS_DB_URL`,
-`FRONTIER_URL`, `FRONTIER_DB_URL`, …
+the environment (see `.env.example`): `REDIS_URL`, `MEILISEARCH_URL`,
+`MEILISEARCH_API_KEY`, `MEILISEARCH_INDEX`, `RAW_STORAGE_DIR`, `DOWNLOAD_TIMEOUT`,
+`SEARCH_TIMEOUT`, `FRONTIER_URL`, `FRONTIER_DB_URL`, …
 
 ## Quality gates
 

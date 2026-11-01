@@ -10,16 +10,19 @@ services:
       timeout: 3s
       retries: 10
 
-  sonic:
-    image: valeriansaliou/sonic:v1.10.2
+  meilisearch:
+    image: getmeili/meilisearch:v1.56
     environment:
-      SONIC_SERVER__LOG_LEVEL: warn
-      SONIC_CHANNEL__INET: 0.0.0.0:1491
-      SONIC_CHANNEL__AUTH_PASSWORD: SecretPassword
-      SONIC_STORE__KV__PATH: /var/lib/sonic/store/kv/
-      SONIC_STORE__FST__PATH: /var/lib/sonic/store/fst/
-    ports: ["1491:1491"]
-    volumes: ["sonic-data:/var/lib/sonic/store"]
+      MEILI_MASTER_KEY: SecretPassword
+      MEILI_ENV: development
+      MEILI_NO_ANALYTICS: "true"
+    ports: ["7700:7700"]
+    volumes: ["meilisearch-data:/meili_data"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7700/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   api:
     build: { context: ., args: { SERVICE: api } }
@@ -27,9 +30,9 @@ services:
     ports: ["8000:8000"]
     environment: &env
       REDIS_URL: redis://redis:6379/0
-      SONIC_HOST: sonic
-      SONIC_PORT: "1491"
-      SONIC_PASSWORD: SecretPassword
+      MEILISEARCH_URL: http://meilisearch:7700
+      MEILISEARCH_API_KEY: SecretPassword
+      MEILISEARCH_INDEX: pages
       RAW_STORAGE_DIR: /app/data/raw
       DEBUG: ${DEBUG:-true}
       FRONTIER_URL: http://frontier:8001
@@ -69,16 +72,12 @@ services:
   searcher:
     build: { context: ., args: { SERVICE: searcher } }
     command: celery -A searcher.main:app worker -Q index,search -l info
-    environment:
-      <<: *env
-      DOCUMENTS_DB_URL: sqlite:////app/data/documents/documents.db
-    volumes: ["documents-data:/app/data/documents"]
+    environment: *env
     depends_on:
       redis: { condition: service_healthy }
-      sonic: { condition: service_started }
+      meilisearch: { condition: service_healthy }
 
 volumes:
   raw-data:
-  sonic-data:
-  documents-data:
+  meilisearch-data:
   frontier-data:
