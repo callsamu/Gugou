@@ -25,6 +25,9 @@ from the URL hash and records it with the page URL and title in its own SQLite
 database (`DOCUMENTS_DB_URL`). Search tasks resolve the ids back to pages, so
 the API never talks to Sonic or SQLite directly.
 
+After extracting a page, the extractor resolves the links it found and queues
+them back to the downloader as a Celery group.
+
 ## Layout
 
 ```
@@ -32,7 +35,7 @@ pyproject.toml            uv workspace root (dev tooling, ruff/mypy/pytest)
 packages/common/          shared settings, contracts, Celery factory, Sonic client (asonic)
 services/api/             FastAPI HTTP layer
 services/downloader/      fetches URLs, stores raw HTML
-services/extractor/       parses HTML into structured data
+services/extractor/       parses HTML, queues discovered links for download
 services/searcher/        indexes document text and answers Sonic queries
 frontend/                 Preact + Tailwind search UI
 Dockerfile                one image, SERVICE build arg selects the member

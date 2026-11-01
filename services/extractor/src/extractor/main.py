@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from typing import Any, cast
+from urllib.parse import urldefrag, urljoin, urlsplit
 
+from celery import group  # pyright: ignore[reportMissingTypeStubs]
 from sqlmodel import Session, select
 
 from common.celery_app import create_app
@@ -17,6 +19,53 @@ from extractor.extractor import Extractor
 logger = logging.getLogger(__name__)
 
 app = create_app("extractor", QUEUES["extract"])
+
+HTTP_SCHEMES = frozenset({"http", "https"})
+
+
+def links_to_fetch(url: str, links: list[str]) -> list[str]:
+    """Resolve, filter and deduplicate the links extracted from ``url``."""
+    base, _ = urldefrag(url)
+    targets: list[str] = []
+
+    for link in links:
+        target, _ = urldefrag(urljoin(base, link.strip()))
+        if not target or target == base:
+            continue
+        if urlsplit(target).scheme.lower() not in HTTP_SCHEMES:
+            continue
+        targets.append(target)
+
+    return targets
+
+
+def _signature(name: str, **kwargs: Any) -> Any:
+    """Create a Celery signature for a task name."""
+    return cast(Any, app.signature(name, **kwargs))  # pyright: ignore[reportUnknownMemberType]
+
+
+def forward_links(
+    url: str,
+    links: list[str],
+    signature: Callable[..., Any] | None = None,
+    group_factory: Callable[..., Any] | None = None,
+) -> None:
+    """Queue a Celery group of download tasks for the links found in ``url``."""
+    targets = links_to_fetch(url, links)
+    if not targets:
+        return
+
+    make_signature = signature or _signature
+    make_group = group_factory or cast(Callable[..., Any], group)
+    make_group(
+        make_signature(
+            TaskNames.DOWNLOAD,
+            kwargs={"url": target},
+            queue=QUEUES["download"],
+        )
+        for target in targets
+    ).apply_async()
+    logger.info("queued %d link(s) from %s for download", len(targets), url)
 
 
 def _already_seen(content_hash: str | None) -> bool:
@@ -76,14 +125,20 @@ def forward(extracted: Extracted, send: Callable[..., Any] | None = None) -> Non
     )
 
 
-@cast(Any, app.task)(name=TaskNames.EXTRACT)  # pyright: ignore[reportUnknownMemberType]
-def extract(url: str, content_path: str | None = None) -> dict[str, Any] | None:
-    """Parse the stored HTML and forward the structured result to the searcher.
-
-    Returns None when the content was already processed and skipped.
-    """
-    extracted = process(url, content_path, Extractor())
+def run(url: str, content_path: str | None, extractor: Extractor) -> dict[str, Any] | None:
+    """Extract a stored page, forward it and queue the links found in it."""
+    extracted = process(url, content_path, extractor)
     if extracted is None:
         return None
     forward(extracted)
+    forward_links(url, extracted.links)
     return extracted.model_dump()
+
+
+@cast(Any, app.task)(name=TaskNames.EXTRACT)  # pyright: ignore[reportUnknownMemberType]
+def extract(url: str, content_path: str | None = None) -> dict[str, Any] | None:
+    """Parse the stored HTML, forward it and queue the links found in it.
+
+    Returns None when the content was already processed and skipped.
+    """
+    return run(url, content_path, Extractor())

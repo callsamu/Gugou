@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -123,3 +124,99 @@ def test_forward_queues_the_extracted_document() -> None:
     assert sent[0]["args"] == (TaskNames.INDEX,)
     assert sent[0]["queue"] == QUEUES["index"]
     assert sent[0]["kwargs"]["payload"]["title"] == "Stored"
+
+
+def test_links_to_fetch_resolves_filters_and_dedupes() -> None:
+    links = [
+        "/one",
+        "two",
+        "https://example.com/three#section",
+        "//cdn.example.com/lib",
+        "#section",
+        "mailto:hi@example.com",
+        "javascript:void(0)",
+        "  /one  ",
+        URL,
+        "",
+    ]
+
+    assert main.links_to_fetch(URL, links) == [
+        "https://example.com/one",
+        "https://example.com/two",
+        "https://example.com/three",
+        "https://cdn.example.com/lib",
+    ]
+
+
+def test_forward_links_sends_a_group_of_download_tasks() -> None:
+    signatures: list[dict[str, Any]] = []
+    groups: list[list[dict[str, Any]]] = []
+
+    def fake_signature(name: str, **kwargs: Any) -> dict[str, Any]:
+        item = {"name": name, **kwargs}
+        signatures.append(item)
+        return item
+
+    class FakeGroup:
+        def __init__(self, items: Iterable[dict[str, Any]]) -> None:
+            self.items = list(items)
+
+        def apply_async(self) -> None:
+            groups.append(self.items)
+
+    main.forward_links(
+        URL,
+        ["/one", "https://example.com/two", "/one", "mailto:hi@example.com"],
+        signature=fake_signature,
+        group_factory=FakeGroup,
+    )
+
+    assert [item["kwargs"]["url"] for item in signatures] == [
+        "https://example.com/one",
+        "https://example.com/two",
+    ]
+    assert groups == [signatures]
+    assert signatures[0]["name"] == TaskNames.DOWNLOAD
+    assert signatures[0]["queue"] == QUEUES["download"]
+
+
+def test_run_forwards_and_queues_links(monkeypatch: pytest.MonkeyPatch) -> None:
+    extracted = Extracted(url=URL, title="Stored", text="body", links=["/one"])
+    forwarded: list[Extracted] = []
+    queued: list[tuple[str, list[str]]] = []
+
+    def fake_process(url: str, content_path: str | None, extractor: Extractor) -> Extracted:
+        return extracted
+
+    def fake_forward(item: Extracted) -> None:
+        forwarded.append(item)
+
+    def fake_forward_links(url: str, links: list[str]) -> None:
+        queued.append((url, links))
+
+    monkeypatch.setattr(main, "process", fake_process)
+    monkeypatch.setattr(main, "forward", fake_forward)
+    monkeypatch.setattr(main, "forward_links", fake_forward_links)
+
+    result = main.run(URL, "page.html", Extractor())
+
+    assert result == extracted.model_dump()
+    assert forwarded == [extracted]
+    assert queued == [(URL, ["/one"])]
+
+
+def test_run_skips_when_content_was_already_seen(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: list[str] = []
+
+    def fake_process(url: str, content_path: str | None, extractor: Extractor) -> None:
+        return None
+
+    def fail(*args: object, **kwargs: object) -> None:
+        called.append("called")
+
+    monkeypatch.setattr(main, "process", fake_process)
+    monkeypatch.setattr(main, "forward", fail)
+    monkeypatch.setattr(main, "forward_links", fail)
+
+    assert main.run(URL, "page.html", Extractor()) is None
+    assert called == []
