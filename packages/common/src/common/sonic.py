@@ -1,37 +1,42 @@
-"""Minimal Sonic Channel clients (ingestion and search).
+"""Sonic clients backed by the ``asonic`` library.
 
-Sonic speaks a line based TCP protocol. These clients cover the commands the
-pipeline needs without pulling in an extra dependency.
+Asonic is asynchronous; these classes expose the small synchronous surface the
+Celery workers need. Each operation opens a channel, runs one command and
+closes it again.
 """
 
 from __future__ import annotations
 
-import socket
-from typing import Self
+import asyncio
+import contextlib
+from collections.abc import Coroutine
+from typing import Any, Self, cast
+
+from asonic import Client  # pyright: ignore[reportMissingTypeStubs]
+from asonic.enums import Channel  # pyright: ignore[reportMissingTypeStubs]
 
 #: Sonic's channel buffer is 20_000 bytes; keep commands comfortably below it.
 MAX_TEXT_LENGTH = 10_000
 
 
 class SonicError(RuntimeError):
-    """Raised when Sonic answers with an ``ERR`` line."""
+    """Raised when Sonic rejects a command or cannot be reached."""
 
 
-def _escape(text: str) -> str:
-    """Quote a payload for Sonic's line protocol."""
-    return (
-        text[:MAX_TEXT_LENGTH]
-        .replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\r", " ")
-        .replace("\n", " ")
-    )
+def _prepare(text: str) -> str:
+    """Normalise a payload for Sonic's line protocol."""
+    return text[:MAX_TEXT_LENGTH].replace("\\", "\\\\").replace("\r", " ").replace("\n", " ")
+
+
+def _run[T](coro: Coroutine[Any, Any, T]) -> T:
+    try:
+        return asyncio.run(coro)
+    except Exception as exc:
+        raise SonicError(str(exc)) from exc
 
 
 class _SonicChannel:
-    """Shared handshake and command plumbing for Sonic's channels."""
-
-    channel: str = ""
+    """Shared settings and lifecycle helpers for the sync wrappers."""
 
     def __init__(
         self,
@@ -40,55 +45,65 @@ class _SonicChannel:
         password: str = "",
         timeout: float = 10.0,
     ) -> None:
-        self._sock = socket.create_connection((host, port), timeout=timeout)
-        self._reader = self._sock.makefile("r", encoding="utf-8", newline="\n")
-        self._writer = self._sock.makefile("w", encoding="utf-8", newline="\n")
+        self.host = host
+        self.port = port
+        self.password = password
+        self.timeout = timeout
 
-        try:
-            greeting = self._reader.readline()
-            if not greeting.startswith("CONNECTED"):
-                raise SonicError(f"unexpected greeting: {greeting.strip()!r}")
-            response = self._command(f"START {self.channel} {password}".rstrip())
-            if not response.startswith("STARTED"):
-                raise SonicError(f"could not open {self.channel} channel: {response!r}")
-        except Exception:
-            self.close()
-            raise
+    async def _connect(self, channel: Channel) -> Client:
+        client: Any = Client(self.host, self.port, self.password)
+        await client.channel(channel)
+        return cast(Client, client)
 
-    def _command(self, line: str) -> str:
-        self._writer.write(f"{line}\n")
-        self._writer.flush()
-        response = self._reader.readline().strip()
-        if response.startswith("ERR"):
-            raise SonicError(response)
-        return response
-
-    def close(self) -> None:
-        for stream in (self._reader, self._writer):
-            stream.close()
-        self._sock.close()
+    @staticmethod
+    async def _close(client: Client) -> None:
+        with contextlib.suppress(Exception):
+            await client.quit()
 
     def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
-        self.close()
+        pass
 
 
 class SonicIngest(_SonicChannel):
-    """Blocking client for the Sonic ``ingest`` channel."""
+    """Synchronous client for the Sonic ``ingest`` channel."""
 
-    channel = "ingest"
+    async def _push(self, collection: str, bucket: str, object_id: str, text: str) -> None:
+        async with asyncio.timeout(self.timeout):
+            client = await self._connect(Channel.INGEST)
+            try:
+                await client.push(collection, bucket, object_id, _prepare(text))
+            finally:
+                await self._close(client)
 
     def push(self, collection: str, bucket: str, object_id: str, text: str) -> None:
         """Index ``text`` under ``object_id``; Sonic stores no documents itself."""
-        self._command(f'PUSH {collection} {bucket} {object_id} "{_escape(text)}"')
+        _run(self._push(collection, bucket, object_id, text))
 
 
 class SonicSearch(_SonicChannel):
-    """Blocking client for the Sonic ``search`` channel."""
+    """Synchronous client for the Sonic ``search`` channel."""
 
-    channel = "search"
+    async def _query(
+        self,
+        collection: str,
+        bucket: str,
+        terms: str,
+        limit: int,
+        offset: int,
+    ) -> list[str]:
+        async with asyncio.timeout(self.timeout):
+            client = await self._connect(Channel.SEARCH)
+            try:
+                query: dict[str, Any] = {"limit": limit}
+                if offset:
+                    query["offset"] = offset
+                raw = await client.query(collection, bucket, _prepare(terms), **query)
+            finally:
+                await self._close(client)
+        return [item.decode() for item in raw]
 
     def query(
         self,
@@ -99,21 +114,4 @@ class SonicSearch(_SonicChannel):
         offset: int = 0,
     ) -> list[str]:
         """Return the object ids matching ``terms``."""
-        command = f'QUERY {collection} {bucket} "{_escape(terms)}" LIMIT({limit})'
-        if offset:
-            command += f" OFFSET({offset})"
-        pending = self._command(command)
-        if not pending.startswith("PENDING"):
-            raise SonicError(f"unexpected query response: {pending!r}")
-
-        _, _, query_id = pending.partition(" ")
-        event = self._reader.readline().strip()
-        if event.startswith("ERR"):
-            raise SonicError(event)
-
-        parts = event.split()
-        if len(parts) < 3 or parts[0] != "EVENT" or parts[1] != "QUERY":
-            raise SonicError(f"unexpected query event: {event!r}")
-        if parts[2] != query_id:
-            raise SonicError(f"query id mismatch: {event!r}")
-        return parts[3:]
+        return _run(self._query(collection, bucket, terms, limit, offset))

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Shared configuration, contracts and Celery plumbing"
 requires-python = ">=3.12"
 dependencies = [
+    "asonic>=2.0.0",
     "celery[redis]>=5.4",
     "pydantic>=2.9",
     "pydantic-settings>=2.5",

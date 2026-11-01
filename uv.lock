@@ -77,6 +77,12 @@ requires-dist = [
 ]
 
 [[package]]
+name = "asonic"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/f7/4163715e4156e7be7e7e0712011869c634ee682203e25ed42df62f6d69a1/asonic-2.0.0.tar.gz", hash = "sha256:730f4f9380d0047e3c440dddd02eb793657686c890a8dc756d0237af49e1922f", size = 5036, upload-time = "2020-02-05T14:13:20.002Z" }
+
+[[package]]
 name = "ast-serialize"
 version = "0.13.1"
 source = { registry = "https://pypi.org/simple" }
@@ -257,6 +263,7 @@ name = "common"
 version = "0.1.0"
 source = { editable = "packages/common" }
 dependencies = [
+    { name = "asonic" },
     { name = "celery", extra = ["redis"] },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -266,6 +273,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "asonic", specifier = ">=2.0.0" },
     { name = "celery", extras = ["redis"], specifier = ">=5.4" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pydantic-settings", specifier = ">=2.5" },

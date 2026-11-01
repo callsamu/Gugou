@@ -29,7 +29,7 @@ the API never talks to Sonic or SQLite directly.
 
 ```
 pyproject.toml            uv workspace root (dev tooling, ruff/mypy/pytest)
-packages/common/          shared settings, contracts, Celery factory
+packages/common/          shared settings, contracts, Celery factory, Sonic client (asonic)
 services/api/             FastAPI HTTP layer
 services/downloader/      fetches URLs, stores raw HTML
 services/extractor/       parses HTML into structured data

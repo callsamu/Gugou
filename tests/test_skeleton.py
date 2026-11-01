@@ -56,6 +56,9 @@ def test_sonic_client_speaks_the_ingest_protocol() -> None:
             received.append(stream.readline().strip())
             stream.write("OK\n")
             stream.flush()
+            received.append(stream.readline().strip())
+            stream.write("ENDED quit\n")
+            stream.flush()
 
     thread = threading.Thread(target=serve, daemon=True)
     thread.start()
@@ -69,6 +72,7 @@ def test_sonic_client_speaks_the_ingest_protocol() -> None:
     assert received == [
         "START ingest pw",
         'PUSH col buc id1 "hello \\"world\\" next line"',
+        "QUIT",
     ]
 
 
@@ -90,6 +94,9 @@ def test_sonic_search_returns_object_ids() -> None:
             stream.write("PENDING 42\n")
             stream.write("EVENT QUERY 42 id1 id2\n")
             stream.flush()
+            received.append(stream.readline().strip())
+            stream.write("ENDED quit\n")
+            stream.flush()
 
     thread = threading.Thread(target=serve, daemon=True)
     thread.start()
@@ -101,7 +108,7 @@ def test_sonic_search_returns_object_ids() -> None:
         server.close()
 
     assert ids == ["id1", "id2"]
-    assert received == ["START search pw", 'QUERY col buc "hello" LIMIT(2)']
+    assert received == ["START search pw", 'QUERY col buc "hello" LIMIT(2)', "QUIT"]
 
 
 def test_search_endpoint_dispatches_to_the_searcher(monkeypatch: pytest.MonkeyPatch) -> None:
