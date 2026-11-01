@@ -19,3 +19,22 @@ class Extracted(BaseModel):
     title: str | None = None
     text: str | None = None
     links: list[str] = Field(default_factory=list)
+
+
+class SearchResult(BaseModel):
+    """One Sonic hit, resolved back to the page it belongs to."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    url: str | None = None
+    title: str | None = None
+
+
+class SearchResponse(BaseModel):
+    """Response returned by ``GET /search``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    results: list[SearchResult] = Field(default_factory=list[SearchResult])

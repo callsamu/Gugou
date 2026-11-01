@@ -48,7 +48,7 @@ def _record(url: str, content_path: str, content_hash: str) -> None:
 
 
 def process(url: str, content_path: str | None, extractor: Extractor) -> Extracted | None:
-    """Parse the stored HTML and build the indexer payload.
+    """Parse the stored HTML and build the searcher payload.
 
     Returns None when the body has already been seen, signalling the caller
     to skip extraction and forwarding.
@@ -78,7 +78,7 @@ def forward(extracted: Extracted, send: Callable[..., Any] | None = None) -> Non
 
 @cast(Any, app.task)(name=TaskNames.EXTRACT)  # pyright: ignore[reportUnknownMemberType]
 def extract(url: str, content_path: str | None = None) -> dict[str, Any] | None:
-    """Parse the stored HTML and forward the structured result to the indexer.
+    """Parse the stored HTML and forward the structured result to the searcher.
 
     Returns None when the content was already processed and skipped.
     """

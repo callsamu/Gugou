@@ -11,7 +11,7 @@ from common.contracts import Extracted
 
 
 class Extractor:
-    """Turn raw HTML files into the payload the indexer consumes.
+    """Turn raw HTML files into the payload the searcher consumes.
 
     Reading and parsing are separate methods so both can be exercised without
     Celery or the rest of the mesh.
@@ -30,7 +30,7 @@ class Extractor:
         return file.read_text(encoding="utf-8", errors="replace")
 
     def extract(self, url: str, html: str) -> Extracted:
-        """Parse ``html`` into the contract shared with the indexer."""
+        """Parse ``html`` into the contract shared with the searcher."""
         soup = BeautifulSoup(html, self.parser)
         return Extracted(
             url=url,
