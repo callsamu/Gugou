@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import httpx
@@ -22,9 +23,18 @@ def _engine(path: Path) -> Engine:
     return engine
 
 
-def _client(body: bytes = BODY, content_type: str = "text/html") -> httpx.Client:
+def _client(
+    body: bytes = BODY,
+    content_type: str = "text/html",
+    status: int = 200,
+) -> httpx.Client:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=body, headers={"content-type": content_type})
+        return httpx.Response(
+            status,
+            content=body,
+            headers={"content-type": content_type},
+            request=request,
+        )
 
     return httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
 
@@ -44,12 +54,34 @@ def test_fetch_truncates_the_body_to_max_bytes(tmp_path: Path) -> None:
 
 
 def test_fetch_raises_on_error_status(tmp_path: Path) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(404, request=request)
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
     with pytest.raises(httpx.HTTPStatusError):
-        Downloader(tmp_path, client=client).fetch(URL)
+        Downloader(tmp_path, client=_client(status=404)).fetch(URL)
+
+
+def test_fetch_logs_request_and_success(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.INFO):
+        Downloader(raw_dir=tmp_path, client=_client()).fetch(URL)
+
+    assert f"fetching {URL}" in caplog.text
+    assert f"fetch succeeded for {URL}" in caplog.text
+
+
+def test_fetch_logs_failure(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.INFO), pytest.raises(httpx.HTTPStatusError):
+        Downloader(tmp_path, client=_client(status=500)).fetch(URL)
+
+    assert f"fetch failed for {URL}" in caplog.text
+
+
+def test_saving_a_url_logs_its_state(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    engine = _engine(tmp_path / "urls.db")
+    downloader = Downloader(tmp_path / "raw", engine=engine)
+
+    with caplog.at_level(logging.INFO):
+        downloader.create_url(URL)
+
+    assert f"saved url {URL} to the database" in caplog.text
+    assert "state=pending" in caplog.text
 
 
 def test_store_writes_a_hashed_file_under_raw_dir(tmp_path: Path) -> None:

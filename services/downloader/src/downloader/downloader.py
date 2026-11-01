@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -15,6 +16,8 @@ from sqlmodel import Session, select
 
 from common.config import settings
 from downloader.db import Url, UrlState, create_db, get_engine, hash_url
+
+logger = logging.getLogger(__name__)
 
 HTML_CONTENT_TYPES: Final[frozenset[str]] = frozenset({"text/html", "application/xhtml+xml"})
 
@@ -65,18 +68,31 @@ class Downloader:
 
     def fetch(self, url: str) -> FetchResult:
         """Download ``url``, truncating the body to ``max_bytes``."""
+        logger.info("fetching %s", url)
         headers = {"User-Agent": self.user_agent}
-        if self._client is not None:
-            response = self._client.get(url, headers=headers)
-        else:
-            with httpx.Client(follow_redirects=True, timeout=self.timeout) as client:
-                response = client.get(url, headers=headers)
-        response.raise_for_status()
-        return FetchResult(
+        try:
+            if self._client is not None:
+                response = self._client.get(url, headers=headers)
+            else:
+                with httpx.Client(follow_redirects=True, timeout=self.timeout) as client:
+                    response = client.get(url, headers=headers)
+            response.raise_for_status()
+        except Exception as exc:
+            logger.error("fetch failed for %s: %s", url, exc)
+            raise
+
+        result = FetchResult(
             url=url,
             body=response.content[: self.max_bytes],
             content_type=response.headers.get("content-type"),
         )
+        logger.info(
+            "fetch succeeded for %s (%d bytes, content-type=%r)",
+            url,
+            result.size_bytes,
+            result.content_type,
+        )
+        return result
 
     def store(self, result: FetchResult) -> Path:
         """Write the fetched body under ``raw_dir`` and return its path."""
@@ -130,6 +146,7 @@ class Downloader:
             session.add(record)
             session.commit()
             session.refresh(record)
+            logger.info("saved url %s to the database (state=%s)", url, state.value)
             return record
 
     @staticmethod
