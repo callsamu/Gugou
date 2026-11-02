@@ -126,14 +126,28 @@ def test_api_adds_urls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(frontier_main, "frontier", test_frontier)
 
     with TestClient(frontier_main.app) as client:
-        response = cast(
+        first = cast(
             Any,
             client.post("/urls", json={"urls": [URL]}),  # pyright: ignore[reportUnknownMemberType]
         )
+        _wait_for_state(engine, URL, UrlState.COMPLETED)
+        second = cast(
+            Any,
+            client.post("/urls", json={"urls": [URL]}),  # pyright: ignore[reportUnknownMemberType]
+        )
+        third = cast(
+            Any,
+            client.post(  # pyright: ignore[reportUnknownMemberType]
+                "/urls",
+                json={"urls": [URL], "force": True},
+            ),
+        )
+        _wait_for_state(engine, URL, UrlState.COMPLETED)
 
-    assert response.status_code == 202
-    assert response.json() == {"queued": 1, "skipped": 0}
-    _wait_for_state(engine, URL, UrlState.COMPLETED)
+    assert first.status_code == 202
+    assert first.json() == {"queued": 1, "skipped": 0}
+    assert second.json() == {"queued": 0, "skipped": 1}
+    assert third.json() == {"queued": 1, "skipped": 0}
 
 
 def test_same_origin_urls_are_queued_after_the_delay(tmp_path: Path) -> None:
@@ -165,6 +179,82 @@ def test_same_origin_urls_are_queued_after_the_delay(tmp_path: Path) -> None:
         frontier.stop()
 
     assert processed == [FIRST_URL, OTHER_ORIGIN_URL, SAME_ORIGIN_URL]
+
+
+def test_same_origin_batch_gets_incremental_priorities(tmp_path: Path) -> None:
+    engine = _engine(tmp_path / "frontier.db")
+    blocker = "https://blocker.example.com/first"
+    first = "https://batch.example.com/one"
+    second = "https://batch.example.com/two"
+    third = "https://batch.example.com/three"
+    other = "https://other.example.com/one"
+    first_started = threading.Event()
+    release_first = threading.Event()
+    processed: list[str] = []
+
+    def send(url: str) -> dict[str, Any]:
+        processed.append(url)
+        if url == blocker:
+            first_started.set()
+            release_first.wait(timeout=2)
+        return {"url": url, "content_path": "/tmp/page.html"}
+
+    frontier = Frontier(engine=engine, send=send)
+    frontier.start()
+    try:
+        assert frontier.add_urls([blocker]) == 1
+        assert first_started.wait(timeout=2)
+        assert frontier.add_urls([first, second, third]) == 3
+        assert frontier.add_urls([other]) == 1
+        release_first.set()
+
+        for url in (blocker, first, second, third, other):
+            _wait_for_state(engine, url, UrlState.COMPLETED)
+    finally:
+        release_first.set()
+        frontier.stop()
+
+    assert processed == [blocker, first, other, second, third]
+
+
+def test_force_requeues_a_completed_url(tmp_path: Path) -> None:
+    engine = _engine(tmp_path / "frontier.db")
+    processed: list[str] = []
+
+    def send(url: str) -> dict[str, Any]:
+        processed.append(url)
+        return {"url": url, "content_path": "/tmp/page.html"}
+
+    frontier = Frontier(engine=engine, send=send)
+    frontier.start()
+    try:
+        assert frontier.add_urls([URL]) == 1
+        _wait_for_state(engine, URL, UrlState.COMPLETED)
+        assert frontier.add_urls([URL]) == 0
+        assert frontier.add_urls([URL], force=True) == 1
+
+        deadline = time.monotonic() + 2
+        while len(processed) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert processed == [URL, URL]
+        _wait_for_state(engine, URL, UrlState.COMPLETED)
+    finally:
+        frontier.stop()
+
+
+def test_force_bypasses_debug_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = _engine(tmp_path / "frontier.db")
+    monkeypatch.setattr(settings, "debug", True)
+    monkeypatch.setattr(frontier_module, "DEBUG_URL_LIMIT", 0)
+
+    frontier = Frontier(engine=engine, send=_send_ok)
+    frontier.start()
+    try:
+        assert frontier.add_urls([URL]) == 0
+        assert frontier.add_urls([URL], force=True) == 1
+        _wait_for_state(engine, URL, UrlState.COMPLETED)
+    finally:
+        frontier.stop()
 
 
 def test_pending_urls_are_reloaded_on_start(tmp_path: Path) -> None:

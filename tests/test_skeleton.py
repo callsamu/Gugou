@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -34,6 +35,34 @@ def test_api_healthz() -> None:
     with TestClient(app) as client:
         response = cast(Any, client.get("/healthz"))  # pyright: ignore[reportUnknownMemberType]
         assert response.json() == {"status": "ok"}
+
+
+def test_crawl_requests_force_from_frontier(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+        calls.append({"url": url, **kwargs})
+        return httpx.Response(
+            202,
+            json={"queued": 1, "skipped": 0},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    with TestClient(app) as client:
+        response = cast(
+            Any,
+            client.post(  # pyright: ignore[reportUnknownMemberType]
+                "/crawl",
+                json={"url": "https://example.com/page"},
+            ),
+        )
+
+    assert response.status_code == 202
+    assert response.json() == {"url": "https://example.com/page", "queued": True}
+    assert calls[0]["url"] == f"{settings.frontier_url}/urls"
+    assert calls[0]["json"] == {"urls": ["https://example.com/page"], "force": True}
 
 
 def test_search_endpoint_dispatches_to_the_searcher(monkeypatch: pytest.MonkeyPatch) -> None:

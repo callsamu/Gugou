@@ -77,11 +77,11 @@ export function CrawlPage(_props: RoutableProps) {
                 : "border-amber-200 bg-amber-50 text-amber-900"
             }`}
           >
-            <p class="font-medium">{result.queued ? "Queued!" : "Already known"}</p>
+            <p class="font-medium">{result.queued ? "Queued!" : "Not queued"}</p>
             <p class="mt-1 text-sm">
               {result.queued
                 ? "The frontier will download, parse and index this page."
-                : "This URL is already in the frontier."}
+                : "The frontier did not accept this URL."}
             </p>
           </div>
         )}

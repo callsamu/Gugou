@@ -29,6 +29,7 @@ class AddUrlsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     urls: list[AnyHttpUrl]
+    force: bool = False
 
 
 class AddUrlsResponse(BaseModel):
@@ -46,5 +47,5 @@ def healthz() -> dict[str, str]:
 @app.post("/urls", status_code=202)
 def add_urls(request: AddUrlsRequest) -> AddUrlsResponse:
     """Add URLs to the frontier queue."""
-    queued = frontier.add_urls([str(url) for url in request.urls])
+    queued = frontier.add_urls([str(url) for url in request.urls], force=request.force)
     return AddUrlsResponse(queued=queued, skipped=len(request.urls) - queued)

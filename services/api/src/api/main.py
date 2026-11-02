@@ -41,7 +41,7 @@ def crawl(request: CrawlRequest) -> dict[str, object]:
     try:
         response = httpx.post(
             f"{settings.frontier_url.rstrip('/')}/urls",
-            json={"urls": [str(request.url)]},
+            json={"urls": [str(request.url)], "force": True},
             timeout=settings.frontier_timeout,
         )
         response.raise_for_status()

@@ -22,7 +22,7 @@ from frontier.db import Url, UrlState, create_db, get_engine, hash_url
 logger = logging.getLogger(__name__)
 
 #: Debug-mode cap on the number of URLs recorded in the frontier.
-DEBUG_URL_LIMIT = 200
+DEBUG_URL_LIMIT = 2000
 
 #: How long the frontier waits for a download task result.
 DOWNLOAD_TASK_TIMEOUT = 60.0
@@ -46,7 +46,7 @@ class Frontier:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._ready = threading.Event()
-        self._db_lock = threading.Lock()
+        self._db_lock = threading.RLock()
         self._celery = create_app("frontier", QUEUES["download"])
 
     @property
@@ -75,34 +75,49 @@ class Frontier:
         self._loop = None
         self._thread = None
 
-    def add_urls(self, urls: list[str]) -> int:
-        """Persist new URLs as pending and enqueue them by insertion time."""
+    def add_urls(self, urls: list[str], *, force: bool = False) -> int:
+        """Persist URLs as pending and enqueue them by insertion time.
+
+        ``force`` is used by manual crawl requests: it re-queues URLs that were
+        already seen and bypasses the debug URL cap. Discovered links use the
+        default and are deduplicated.
+        """
         loop = self._loop
         if loop is None:
             raise RuntimeError("frontier is not running")
 
         queued: list[tuple[int, str]] = []
+        accepted = 0
+        created = time.time_ns()
         with self._db_lock:
             for url in urls:
-                if self._has_seen(url):
-                    logger.info("frontier: skipping %s: url already seen", url)
-                    continue
-                if settings.debug and self._url_count() >= DEBUG_URL_LIMIT:
-                    logger.info("frontier: debug url limit of %d reached", DEBUG_URL_LIMIT)
-                    break
+                existing = self._get(url)
+                if existing is not None:
+                    if not force:
+                        logger.info("frontier: skipping %s: url already seen", url)
+                        continue
+                    if existing.state is UrlState.PENDING:
+                        logger.info("frontier: %s is already pending", url)
+                        accepted += 1
+                        continue
+                    self._set_state(url, UrlState.PENDING)
+                else:
+                    if not force and settings.debug and self._url_count() >= DEBUG_URL_LIMIT:
+                        logger.info("frontier: debug url limit of %d reached", DEBUG_URL_LIMIT)
+                        break
+                    self._insert(url)
 
-                self._insert(url)
                 origin = _origin(url)
                 previous = self._origins.get(origin)
-                now = time.time_ns()
-                priority = now if previous is None else max(now, previous + ORIGIN_DELAY_NS)
+                priority = created if previous is None else max(created, previous + ORIGIN_DELAY_NS)
                 self._origins[origin] = priority
                 queued.append((priority, url))
+                accepted += 1
 
         for priority, url in queued:
             loop.call_soon_threadsafe(self._queue.put_nowait, (priority, url))
             logger.info("frontier: queued %s (priority=%d)", url, priority)
-        return len(queued)
+        return accepted
 
     def _run(self) -> None:
         asyncio.run(self._serve())
@@ -158,9 +173,9 @@ class Frontier:
             (record.url, int(record.createdAt.timestamp() * 1_000_000_000)) for record in records
         ]
 
-    def _has_seen(self, url: str) -> bool:
+    def _get(self, url: str) -> Url | None:
         with Session(self.engine) as session:
-            return session.get(Url, hash_url(url)) is not None
+            return session.get(Url, hash_url(url))
 
     def _url_count(self) -> int:
         with Session(self.engine) as session:
