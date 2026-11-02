@@ -32,7 +32,8 @@ Before fetching a page, the downloader fetches and caches the origin's
 robots.txt and skips URLs disallowed for its user agent.
 
 After extracting a page, the extractor resolves the links it found and sends
-them back to the frontier over HTTP.
+them back to the frontier over HTTP. It extracts text from `<article>` or
+`<main>` when present, ignoring header, nav, aside and footer chrome.
 
 ## Layout
 

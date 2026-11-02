@@ -36,23 +36,64 @@ def test_extract_without_a_title() -> None:
     assert extracted.title is None
 
 
-def test_extract_keeps_only_title_h1_and_paragraphs() -> None:
+def test_extract_prefers_article_and_ignores_chrome() -> None:
     html = """
-    <html><head><title>Page title</title></head><body>
-      <h1>Main heading</h1>
-      <div>navigation noise</div>
-      <p>First <b>paragraph</b>.</p>
-      <ul><li>list noise</li></ul>
-      <h2>Subheading</h2>
-      <p>Second paragraph.</p>
-    </body></html>
+    <html>
+      <head><title>Page title</title></head>
+      <body>
+        <header><h1>Site header</h1><nav><a href="/nav">nav</a></nav></header>
+        <main>
+          <p>Outside article</p>
+          <article>
+            <header><h1>Article header</h1></header>
+            <h2>Article title</h2>
+            <p>First <b>paragraph</b>.</p>
+            <aside><p>Aside noise</p></aside>
+            <a href="/article">article link</a>
+            <footer><p>Article footer</p></footer>
+          </article>
+        </main>
+        <footer><p>Site footer</p></footer>
+      </body>
+    </html>
     """
 
     extracted = Extractor().extract(URL, html)
 
-    assert extracted.text == "Page title\nMain heading\nFirst paragraph.\nSecond paragraph."
-    assert "Subheading" not in extracted.text
-    assert "noise" not in extracted.text
+    assert extracted.title == "Page title"
+    assert extracted.text == "Article title\nFirst paragraph."
+    assert extracted.links == ["/article"]
+
+
+def test_extract_falls_back_to_main() -> None:
+    html = """
+    <body>
+      <header><p>Header</p></header>
+      <main><h1>Main heading</h1><p>Main body</p><aside><p>Aside</p></aside></main>
+      <footer><p>Footer</p></footer>
+    </body>
+    """
+
+    extracted = Extractor().extract(URL, html)
+
+    assert extracted.text == "Main heading\nMain body"
+
+
+def test_extract_ignores_chrome_without_article_or_main() -> None:
+    html = """
+    <body>
+      <header><h1>Header</h1></header>
+      <nav><p>Nav</p></nav>
+      <h1>Content</h1>
+      <p>Body</p>
+      <aside><p>Aside</p></aside>
+      <footer><p>Footer</p></footer>
+    </body>
+    """
+
+    extracted = Extractor().extract(URL, html)
+
+    assert extracted.text == "Content\nBody"
 
 
 def test_extract_returns_empty_text_without_content_nodes() -> None:

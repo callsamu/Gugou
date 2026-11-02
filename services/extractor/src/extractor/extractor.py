@@ -9,8 +9,11 @@ from bs4 import BeautifulSoup
 
 from common.contracts import Extracted
 
+#: Page chrome that never contributes to the indexed content.
+IGNORED_TAGS = ("header", "nav", "aside", "footer")
+
 #: Only these blocks contribute to the indexed text; everything else is noise.
-CONTENT_SELECTOR = "title, h1, p"
+CONTENT_SELECTOR = "h1, h2, h3, h4, h5, h6, p"
 
 
 class Extractor:
@@ -35,18 +38,23 @@ class Extractor:
     def extract(self, url: str, html: str) -> Extracted:
         """Parse ``html`` into the contract shared with the searcher."""
         soup = BeautifulSoup(html, self.parser)
+        for ignored in soup.find_all(IGNORED_TAGS):
+            ignored.decompose()
+
+        root = soup.find("article") or soup.find("main") or soup
         chunks: list[str] = []
-        for node in soup.select(CONTENT_SELECTOR):
+        for node in root.select(CONTENT_SELECTOR):
             for br in node.find_all("br"):
                 br.replace_with(" ")
             text = " ".join(node.get_text("").split())
             if text:
                 chunks.append(text)
+
         return Extracted(
             url=url,
             title=soup.title.get_text(strip=True) if soup.title else None,
             text="\n".join(chunks),
-            links=[str(anchor["href"]) for anchor in soup.find_all("a", href=True)],
+            links=[str(anchor["href"]) for anchor in root.find_all("a", href=True)],
         )
 
     def content_hash(self, path: str | Path | None) -> str | None:
