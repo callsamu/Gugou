@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -19,6 +20,9 @@ from frontier.frontier import Frontier
 
 URL = "https://example.com/article"
 OTHER_URL = "https://example.com/other"
+FIRST_URL = "https://example.com/first"
+SAME_ORIGIN_URL = "https://example.com/second"
+OTHER_ORIGIN_URL = "https://other.example.com/third"
 
 
 def _engine(path: Path) -> Engine:
@@ -130,6 +134,37 @@ def test_api_adds_urls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.status_code == 202
     assert response.json() == {"queued": 1, "skipped": 0}
     _wait_for_state(engine, URL, UrlState.COMPLETED)
+
+
+def test_same_origin_urls_are_queued_after_the_delay(tmp_path: Path) -> None:
+    engine = _engine(tmp_path / "frontier.db")
+    first_started = threading.Event()
+    release_first = threading.Event()
+    processed: list[str] = []
+
+    def send(url: str) -> dict[str, Any]:
+        processed.append(url)
+        if url == FIRST_URL:
+            first_started.set()
+            release_first.wait(timeout=2)
+        return {"url": url, "content_path": "/tmp/page.html"}
+
+    frontier = Frontier(engine=engine, send=send)
+    frontier.start()
+    try:
+        assert frontier.add_urls([FIRST_URL]) == 1
+        assert first_started.wait(timeout=2)
+        assert frontier.add_urls([SAME_ORIGIN_URL, OTHER_ORIGIN_URL]) == 2
+        release_first.set()
+
+        _wait_for_state(engine, FIRST_URL, UrlState.COMPLETED)
+        _wait_for_state(engine, SAME_ORIGIN_URL, UrlState.COMPLETED)
+        _wait_for_state(engine, OTHER_ORIGIN_URL, UrlState.COMPLETED)
+    finally:
+        release_first.set()
+        frontier.stop()
+
+    assert processed == [FIRST_URL, OTHER_ORIGIN_URL, SAME_ORIGIN_URL]
 
 
 def test_pending_urls_are_reloaded_on_start(tmp_path: Path) -> None:

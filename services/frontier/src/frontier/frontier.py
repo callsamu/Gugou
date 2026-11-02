@@ -1,10 +1,11 @@
-"""In-memory FIFO URL frontier processed by a background asyncio thread."""
+"""Priority URL frontier processed by a background asyncio thread."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import threading
+import time
 from collections.abc import Callable
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -21,14 +22,17 @@ from frontier.db import Url, UrlState, create_db, get_engine, hash_url
 logger = logging.getLogger(__name__)
 
 #: Debug-mode cap on the number of URLs recorded in the frontier.
-DEBUG_URL_LIMIT = 1000
+DEBUG_URL_LIMIT = 200
 
 #: How long the frontier waits for a download task result.
 DOWNLOAD_TASK_TIMEOUT = 60.0
 
+#: Spacing between queued URLs of the same origin, in nanoseconds.
+ORIGIN_DELAY_NS = 15 * 1_000_000_000
+
 
 class Frontier:
-    """A FIFO URL queue backed by SQLite and drained by a background thread."""
+    """A priority URL queue ordered by insertion time and backed by SQLite."""
 
     def __init__(
         self,
@@ -37,7 +41,8 @@ class Frontier:
     ) -> None:
         self._engine = engine
         self._send = send or self._send_download
-        self._queue: asyncio.Queue[str | None] = asyncio.Queue()
+        self._queue: asyncio.PriorityQueue[tuple[int, str | None]] = asyncio.PriorityQueue()
+        self._origins: dict[str, int] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._ready = threading.Event()
@@ -65,18 +70,18 @@ class Frontier:
         thread = self._thread
         if loop is None or thread is None:
             return
-        loop.call_soon_threadsafe(self._queue.put_nowait, None)
+        loop.call_soon_threadsafe(self._queue.put_nowait, (-1, None))
         thread.join(timeout=5)
         self._loop = None
         self._thread = None
 
     def add_urls(self, urls: list[str]) -> int:
-        """Persist new URLs as pending and append them to the FIFO queue."""
+        """Persist new URLs as pending and enqueue them by insertion time."""
         loop = self._loop
         if loop is None:
             raise RuntimeError("frontier is not running")
 
-        queued: list[str] = []
+        queued: list[tuple[int, str]] = []
         with self._db_lock:
             for url in urls:
                 if self._has_seen(url):
@@ -85,12 +90,18 @@ class Frontier:
                 if settings.debug and self._url_count() >= DEBUG_URL_LIMIT:
                     logger.info("frontier: debug url limit of %d reached", DEBUG_URL_LIMIT)
                     break
-                self._insert(url)
-                queued.append(url)
 
-        for url in queued:
-            loop.call_soon_threadsafe(self._queue.put_nowait, url)
-            logger.info("frontier: queued %s", url)
+                self._insert(url)
+                origin = _origin(url)
+                previous = self._origins.get(origin)
+                now = time.time_ns()
+                priority = now if previous is None else max(now, previous + ORIGIN_DELAY_NS)
+                self._origins[origin] = priority
+                queued.append((priority, url))
+
+        for priority, url in queued:
+            loop.call_soon_threadsafe(self._queue.put_nowait, (priority, url))
+            logger.info("frontier: queued %s (priority=%d)", url, priority)
         return len(queued)
 
     def _run(self) -> None:
@@ -99,12 +110,16 @@ class Frontier:
     async def _serve(self) -> None:
         self._loop = asyncio.get_running_loop()
         create_db(self.engine)
-        for pending in self._pending_urls():
-            self._queue.put_nowait(pending)
+        for pending_url, created in self._pending_urls():
+            origin = _origin(pending_url)
+            previous = self._origins.get(origin)
+            priority = created if previous is None else max(created, previous + ORIGIN_DELAY_NS)
+            self._origins[origin] = priority
+            self._queue.put_nowait((priority, pending_url))
         self._ready.set()
 
         while True:
-            url = await self._queue.get()
+            _, url = await self._queue.get()
             if url is None:
                 break
             try:
@@ -134,12 +149,14 @@ class Frontier:
         )
         return cast(dict[str, Any], result.get(timeout=DOWNLOAD_TASK_TIMEOUT))
 
-    def _pending_urls(self) -> list[str]:
+    def _pending_urls(self) -> list[tuple[str, int]]:
         with self._db_lock, Session(self.engine) as session:
             records = session.exec(
                 select(Url).where(Url.state == UrlState.PENDING).order_by(col(Url.createdAt))
             ).all()
-        return [record.url for record in records]
+        return [
+            (record.url, int(record.createdAt.timestamp() * 1_000_000_000)) for record in records
+        ]
 
     def _has_seen(self, url: str) -> bool:
         with Session(self.engine) as session:
@@ -177,3 +194,8 @@ class Frontier:
             session.add(record)
             session.commit()
         logger.info("frontier: saved url %s (state=%s)", url, state.value)
+
+
+def _origin(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
