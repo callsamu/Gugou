@@ -74,7 +74,12 @@ def test_search_endpoint_dispatches_to_the_searcher(monkeypatch: pytest.MonkeyPa
             return {
                 "query": "example",
                 "results": [
-                    {"id": "id1", "url": "https://example.com/article", "title": "Example"}
+                    {
+                        "id": "id1",
+                        "url": "https://example.com/article",
+                        "title": "Example",
+                        "description": "Example summary",
+                    }
                 ],
             }
 
@@ -95,7 +100,14 @@ def test_search_endpoint_dispatches_to_the_searcher(monkeypatch: pytest.MonkeyPa
     assert response.status_code == 200
     assert response.json() == {
         "query": "example",
-        "results": [{"id": "id1", "url": "https://example.com/article", "title": "Example"}],
+        "results": [
+            {
+                "id": "id1",
+                "url": "https://example.com/article",
+                "title": "Example",
+                "description": "Example summary",
+            }
+        ],
     }
     assert sent["name"] == TaskNames.SEARCH
     assert sent["queue"] == QUEUES["search"]

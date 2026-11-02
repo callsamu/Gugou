@@ -4,6 +4,7 @@ export interface SearchResult {
   id: string;
   url: string | null;
   title: string | null;
+  description: string | null;
 }
 
 export interface SearchResponse {

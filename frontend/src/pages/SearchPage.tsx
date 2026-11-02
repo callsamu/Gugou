@@ -144,6 +144,9 @@ function ResultLink({ result }: { result: SearchResult }) {
       ) : (
         <span class="text-xl text-slate-800">{label}</span>
       )}
+      {result.description && (
+        <p class="mt-1 text-sm text-slate-700">{result.description}</p>
+      )}
     </div>
   );
 }
