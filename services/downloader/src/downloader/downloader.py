@@ -11,6 +11,7 @@ from typing import Final
 import httpx
 
 from common.config import settings
+from downloader.robots import RobotsCache, RobotsDenied
 
 logger = logging.getLogger(__name__)
 
@@ -45,15 +46,45 @@ class Downloader:
         max_bytes: int | None = None,
         user_agent: str | None = None,
         client: httpx.Client | None = None,
+        robots: RobotsCache | None = None,
     ) -> None:
         self.raw_dir = Path(raw_dir) if raw_dir is not None else Path(settings.raw_storage_dir)
         self.timeout = timeout if timeout is not None else settings.download_timeout
         self.max_bytes = max_bytes if max_bytes is not None else settings.download_max_bytes
         self.user_agent = user_agent if user_agent is not None else settings.user_agent
         self._client = client
+        self.robots = robots or RobotsCache(self._fetch_robots, self.user_agent)
+
+    def _fetch_robots(self, origin: str) -> str:
+        """Fetch the serialized robots.txt for ``origin``."""
+        url = f"{origin}/robots.txt"
+        logger.info("fetching robots.txt for %s", origin)
+        try:
+            if self._client is not None:
+                response = self._client.get(url, headers={"User-Agent": self.user_agent})
+            else:
+                with httpx.Client(follow_redirects=True, timeout=self.timeout) as client:
+                    response = client.get(url, headers={"User-Agent": self.user_agent})
+        except httpx.HTTPError as exc:
+            logger.warning("could not fetch robots.txt for %s: %s", origin, exc)
+            return ""
+
+        if response.status_code in (404, 410):
+            return ""
+        if response.status_code >= 400:
+            logger.warning(
+                "robots.txt for %s returned %s; allowing all",
+                origin,
+                response.status_code,
+            )
+            return ""
+        return response.text
 
     def fetch(self, url: str) -> FetchResult:
         """Download ``url``, truncating the body to ``max_bytes``."""
+        if not self.robots.allows(url):
+            logger.info("robots.txt disallows %s", url)
+            raise RobotsDenied(url)
         logger.info("fetching %s", url)
         headers = {"User-Agent": self.user_agent}
         try:

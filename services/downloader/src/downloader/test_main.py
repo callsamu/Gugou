@@ -12,6 +12,7 @@ import pytest
 from common.queues import QUEUES, TaskNames
 from downloader import main
 from downloader.downloader import Downloader
+from downloader.robots import RobotsCache
 
 URL = "https://example.com/article"
 
@@ -66,3 +67,16 @@ def test_http_errors_are_reraised(tmp_path: Path) -> None:
 
     with pytest.raises(httpx.HTTPStatusError):
         main.process(URL, downloader)
+
+
+def test_robots_disallowed_url_is_not_fetched(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    downloader = _downloader(raw_dir)
+
+    def robots(origin: str) -> str:
+        return "User-agent: *\nDisallow: /article"
+
+    downloader.robots = RobotsCache(robots, "test-agent")
+
+    assert main.process(URL, downloader) is None
+    assert not raw_dir.exists()

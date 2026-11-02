@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from downloader.downloader import Downloader, FetchResult
+from downloader.robots import RobotsCache, RobotsDenied
 
 URL = "https://example.com/article"
 BODY = b"<html>hi</html>"
@@ -48,6 +49,62 @@ def test_fetch_truncates_the_body_to_max_bytes(tmp_path: Path) -> None:
 def test_fetch_raises_on_error_status(tmp_path: Path) -> None:
     with pytest.raises(httpx.HTTPStatusError):
         Downloader(tmp_path, client=_client(status=404)).fetch(URL)
+
+
+def test_fetch_raises_when_robots_disallows(tmp_path: Path) -> None:
+    def robots(origin: str) -> str:
+        return "User-agent: *\nDisallow: /article"
+
+    downloader = Downloader(
+        tmp_path,
+        client=_client(),
+        robots=RobotsCache(robots, "test-agent"),
+    )
+
+    with pytest.raises(RobotsDenied):
+        downloader.fetch(URL)
+
+
+def test_fetch_proceeds_when_robots_allows(tmp_path: Path) -> None:
+    def robots(origin: str) -> str:
+        return "User-agent: *\nDisallow: /private"
+
+    downloader = Downloader(
+        tmp_path,
+        client=_client(),
+        robots=RobotsCache(robots, "test-agent"),
+    )
+
+    assert downloader.fetch(URL).body == BODY
+
+
+def test_robots_txt_is_fetched_and_cached(tmp_path: Path) -> None:
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        if request.url.path == "/robots.txt":
+            return httpx.Response(
+                200,
+                text="User-agent: *\nDisallow: /article",
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            content=BODY,
+            headers={"content-type": "text/html"},
+            request=request,
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    downloader = Downloader(tmp_path, client=client)
+
+    with pytest.raises(RobotsDenied):
+        downloader.fetch(URL)
+    with pytest.raises(RobotsDenied):
+        downloader.fetch(URL)
+
+    assert requests == ["https://example.com/robots.txt"]
 
 
 def test_fetch_logs_request_and_success(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:

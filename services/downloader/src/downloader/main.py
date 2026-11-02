@@ -10,15 +10,22 @@ from typing import Any, cast
 from common.celery_app import create_app
 from common.queues import QUEUES, TaskNames
 from downloader.downloader import Downloader
+from downloader.robots import RobotsDenied
 
 logger = logging.getLogger(__name__)
 
 app = create_app("downloader", QUEUES["download"])
 
+#: Shared per worker process so the robots.txt cache survives across tasks.
+_downloader = Downloader()
+
 
 def process(url: str, downloader: Downloader) -> Path | None:
     """Fetch ``url`` and return the stored path when the response is HTML."""
-    fetched = downloader.fetch(url)
+    try:
+        fetched = downloader.fetch(url)
+    except RobotsDenied:
+        return None
     if not downloader.is_html(fetched):
         logger.info("not forwarding %s: content type %r is not HTML", url, fetched.content_type)
         return None
@@ -44,7 +51,7 @@ def download(url: str, tags: list[str] | None = None) -> dict[str, Any]:
     ``tags`` is part of the crawl request contract; indexing them is not
     implemented yet, so it is accepted and ignored here.
     """
-    content_path = process(url, Downloader())
+    content_path = process(url, _downloader)
     if content_path is not None:
         forward(url, str(content_path))
     return {"url": url, "content_path": None if content_path is None else str(content_path)}
