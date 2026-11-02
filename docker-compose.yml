@@ -41,6 +41,20 @@ services:
       redis: { condition: service_healthy }
       frontier: { condition: service_started }
 
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    ports: ["3000:80"]
+    depends_on:
+      api: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   frontier:
     build: { context: ., args: { SERVICE: frontier } }
     command: uvicorn frontier.main:app --host 0.0.0.0 --port 8001

@@ -48,7 +48,8 @@ services/extractor/       parses HTML, sends discovered links to the frontier
 services/searcher/        indexes document text and answers Meilisearch queries
 frontend/                 Preact + Tailwind search UI
 Dockerfile                one image, SERVICE build arg selects the member
-docker-compose.yml        redis + meilisearch + the five services
+frontend/Dockerfile       multi-stage Preact build served by nginx on Alpine
+docker-compose.yml        redis + meilisearch + the five services + frontend
 ```
 
 ## Getting started
@@ -56,8 +57,10 @@ docker-compose.yml        redis + meilisearch + the five services
 ```bash
 cp .env.example .env
 uv sync --all-packages        # install the workspace
-make up                      # docker compose: redis, meilisearch, 5 services
+make up                      # docker compose: redis, meilisearch, 5 services, frontend
 ```
+
+The stack includes the frontend at http://localhost:3000 (nginx on Alpine).
 
 Or run the pieces locally (needs Redis and Meilisearch reachable at the addresses
 in `.env`):
@@ -75,7 +78,8 @@ The `/crawl` page adds seed URLs, pauses/resumes the frontier queue, and lists
 stored URLs with status, priority and creation-time filters.
 
 The frontend talks to the API at `http://localhost:8000` by default. Set
-`VITE_API_URL` when building or running it against another host:
+`VITE_API_URL` in `.env` (or the environment) when building the container or
+running the dev server against another host:
 
 ```bash
 cd frontend
