@@ -25,9 +25,38 @@ def test_extract_builds_the_shared_contract() -> None:
 
     assert extracted.url == URL
     assert extracted.title == "Example"
+    assert extracted.description is None
     assert extracted.text is not None
     assert "Hello world" in extracted.text
     assert extracted.links == ["/one", "https://example.com/two"]
+
+
+def test_extract_reads_meta_description() -> None:
+    html = """
+    <html>
+      <head>
+        <title>Example</title>
+        <meta name="Description" content="  A concise   summary.  ">
+      </head>
+      <body><p>Body</p></body>
+    </html>
+    """
+
+    extracted = Extractor().extract(URL, html)
+
+    assert extracted.title == "Example"
+    assert extracted.description == "A concise summary."
+
+
+def test_extract_falls_back_to_og_description() -> None:
+    html = """
+    <html>
+      <head><meta property="og:description" content="Social summary"></head>
+      <body><p>Body</p></body>
+    </html>
+    """
+
+    assert Extractor().extract(URL, html).description == "Social summary"
 
 
 def test_extract_without_a_title() -> None:
@@ -39,7 +68,10 @@ def test_extract_without_a_title() -> None:
 def test_extract_prefers_article_and_ignores_chrome() -> None:
     html = """
     <html>
-      <head><title>Page title</title></head>
+      <head>
+        <title>Page title</title>
+        <meta name="description" content="Article summary">
+      </head>
       <body>
         <header><h1>Site header</h1><nav><a href="/nav">nav</a></nav></header>
         <main>
@@ -61,6 +93,7 @@ def test_extract_prefers_article_and_ignores_chrome() -> None:
     extracted = Extractor().extract(URL, html)
 
     assert extracted.title == "Page title"
+    assert extracted.description == "Article summary"
     assert extracted.text == "Article title\nFirst paragraph."
     assert extracted.links == ["/article"]
 

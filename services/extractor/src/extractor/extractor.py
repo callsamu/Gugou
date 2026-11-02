@@ -16,6 +16,17 @@ IGNORED_TAGS = ("header", "nav", "aside", "footer")
 CONTENT_SELECTOR = "h1, h2, h3, h4, h5, h6, p"
 
 
+def _meta_content(soup: BeautifulSoup, attribute: str, value: str) -> str | None:
+    """Return the normalized content of the first matching ``meta`` tag."""
+    for meta in soup.find_all("meta"):
+        candidate = meta.get(attribute)
+        if isinstance(candidate, str) and candidate.lower() == value:
+            content = meta.get("content")
+            if content:
+                return " ".join(str(content).split())
+    return None
+
+
 class Extractor:
     """Turn raw HTML files into the payload the searcher consumes.
 
@@ -41,6 +52,9 @@ class Extractor:
         for ignored in soup.find_all(IGNORED_TAGS):
             ignored.decompose()
 
+        description = _meta_content(soup, "name", "description") or _meta_content(
+            soup, "property", "og:description"
+        )
         root = soup.find("article") or soup.find("main") or soup
         chunks: list[str] = []
         for node in root.select(CONTENT_SELECTOR):
@@ -53,6 +67,7 @@ class Extractor:
         return Extracted(
             url=url,
             title=soup.title.get_text(strip=True) if soup.title else None,
+            description=description,
             text="\n".join(chunks),
             links=[str(anchor["href"]) for anchor in root.find_all("a", href=True)],
         )
