@@ -71,6 +71,9 @@ make extractor  # celery -A extractor.main:app worker -Q extract
 make searcher   # celery -A searcher.main:app worker -Q index,search
 ```
 
+The `/crawl` page adds seed URLs, pauses/resumes the frontier queue, and lists
+stored URLs with status, priority and creation-time filters.
+
 The frontend talks to the API at `http://localhost:8000` by default. Set
 `VITE_API_URL` when building or running it against another host:
 
@@ -85,6 +88,8 @@ VITE_API_URL=http://localhost:8000 npm run dev
 | Method | Path              | Description                                     |
 | ------ | ----------------- | ----------------------------------------------- |
 | POST   | `/crawl`          | Add a URL to the frontier: `{"url": "https://example.com"}` |
+| GET    | `/urls`           | List stored URLs; filter by `status`, order by `priority`/`createdAt` |
+| GET    | `/queue`          | Return whether frontier queue consumption is paused |
 | POST   | `/pause`          | Pause frontier queue consumption                |
 | POST   | `/resume`         | Resume frontier queue consumption               |
 | GET    | `/search?q=...`   | Ask the searcher for pages with URLs and titles |
@@ -102,7 +107,9 @@ The frontier exposes its own small HTTP API on port 8001:
 
 | Method | Path       | Description                                           |
 | ------ | ---------- | ----------------------------------------------------- |
+| GET    | `/urls`    | List stored URLs; `status`, `order_by`, `order`, `limit`, `offset` |
 | POST   | `/urls`    | Add URLs; `force: true` re-queues already-seen URLs   |
+| GET    | `/queue`   | Queue pause state                                     |
 | POST   | `/pause`   | Pause queue consumption; new URLs are still accepted  |
 | POST   | `/resume`  | Resume queue consumption                              |
 | GET    | `/healthz` | Liveness probe                                        |

@@ -17,6 +17,29 @@ export interface CrawlResponse {
   queued: boolean;
 }
 
+export type UrlState = "pending" | "completed" | "failed";
+
+export interface StoredUrl {
+  url: string;
+  url_hash: string;
+  host: string;
+  state: UrlState;
+  priority: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QueueStatus {
+  paused: boolean;
+}
+
+export interface UrlQuery {
+  status?: UrlState | null;
+  orderBy?: "priority" | "createdAt";
+  order?: "asc" | "desc";
+  limit?: number;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, init);
   if (!response.ok) {
@@ -44,4 +67,27 @@ export function crawl(url: string): Promise<CrawlResponse> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ url }),
   });
+}
+
+export function getQueueStatus(): Promise<QueueStatus> {
+  return request<QueueStatus>("/queue");
+}
+
+export function pauseQueue(): Promise<QueueStatus> {
+  return request<QueueStatus>("/pause", { method: "POST" });
+}
+
+export function resumeQueue(): Promise<QueueStatus> {
+  return request<QueueStatus>("/resume", { method: "POST" });
+}
+
+export function listUrls(query: UrlQuery = {}): Promise<StoredUrl[]> {
+  const params = new URLSearchParams();
+  if (query.status) {
+    params.set("status", query.status);
+  }
+  params.set("order_by", query.orderBy ?? "createdAt");
+  params.set("order", query.order ?? "desc");
+  params.set("limit", String(query.limit ?? 50));
+  return request<StoredUrl[]>(`/urls?${params.toString()}`);
 }

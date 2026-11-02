@@ -1,13 +1,13 @@
 import { Router } from "preact-router";
 
-import { CrawlPage } from "./pages/CrawlPage";
+import { ControlPage } from "./pages/ControlPage";
 import { SearchPage } from "./pages/SearchPage";
 
 export function App() {
   return (
     <Router>
       <SearchPage path="/" />
-      <CrawlPage path="/crawl" />
+      <ControlPage path="/crawl" />
     </Router>
   );
 }

@@ -57,7 +57,7 @@ export function SearchPage(_props: RoutableProps) {
     <main class="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-6">
       <header class="flex items-center justify-end py-4 text-sm">
         <Link href="/crawl" class="text-slate-600 hover:text-slate-900 hover:underline">
-          Add a page
+          Crawler control
         </Link>
       </header>
 
