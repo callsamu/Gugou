@@ -1,4 +1,4 @@
-name: engsoftware
+name: gugou
 
 services:
   redis:

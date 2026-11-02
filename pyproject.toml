@@ -1,5 +1,5 @@
 [project]
-name = "engsoftware"
+name = "gugou"
 version = "0.1.0"
 description = "Microservices scaffold: url downloader, html extractor, search service and HTTP API"
 readme = "README.md"

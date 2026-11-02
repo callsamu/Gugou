@@ -21,7 +21,7 @@ celery = create_app(
     QUEUES["index"],
     QUEUES["search"],
 )
-app = FastAPI(title="engsoftware API", version="0.1.0")
+app = FastAPI(title="Gugou API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

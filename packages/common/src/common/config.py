@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    service_name: str = "engsoftware"
+    service_name: str = "gugou"
     debug: bool = False
     log_level: str = "INFO"
 
@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     search_timeout: float = 10.0
     frontier_url: str = "http://localhost:8001"
     frontier_timeout: float = 10.0
-    user_agent: str = "obuscador-downloader/0.1"
+    user_agent: str = "gugou-downloader/0.1"
 
     raw_storage_dir: str = "data/raw"
 

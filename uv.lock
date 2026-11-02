@@ -11,9 +11,9 @@ members = [
     "api",
     "common",
     "downloader",
-    "engsoftware",
     "extractor",
     "frontier",
+    "gugou",
     "searcher",
 ]
 
@@ -437,29 +437,6 @@ requires-dist = [
 ]
 
 [[package]]
-name = "engsoftware"
-version = "0.1.0"
-source = { virtual = "." }
-
-[package.dev-dependencies]
-dev = [
-    { name = "httpx" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "mypy", specifier = ">=1.13" },
-    { name = "pytest", specifier = ">=8.3" },
-    { name = "ruff", specifier = ">=0.6" },
-]
-
-[[package]]
 name = "extractor"
 version = "0.1.0"
 source = { editable = "services/extractor" }
@@ -516,6 +493,29 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "sqlmodel", specifier = ">=0.0.48" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
+]
+
+[[package]]
+name = "gugou"
+version = "0.1.0"
+source = { virtual = "." }
+
+[package.dev-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "mypy", specifier = ">=1.13" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "ruff", specifier = ">=0.6" },
 ]
 
 [[package]]

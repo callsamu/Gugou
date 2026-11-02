@@ -34,7 +34,7 @@ export function CrawlPage(_props: RoutableProps) {
   return (
     <main class="mx-auto flex min-h-screen w-full max-w-2xl flex-col px-6">
       <header class="flex items-center justify-between py-4 text-sm">
-        <Link href="/" aria-label="OBuscador">
+        <Link href="/" aria-label="Gugou">
           <Logo size="small" />
         </Link>
         <Link href="/" class="text-slate-600 hover:text-slate-900 hover:underline">
