@@ -7,7 +7,7 @@ const LETTERS: ReadonlyArray<[string, string]> = [
 ];
 
 export function Logo({ size = "large" }: { size?: "small" | "large" }) {
-  const scale = size === "small" ? "text-3xl" : "text-6xl sm:text-7xl";
+  const scale = size === "small" ? "text-4xl" : "text-8xl sm:text-9xl";
 
   return (
     <div class={`select-none font-semibold tracking-tight ${scale}`} aria-label="Gugou">
