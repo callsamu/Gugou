@@ -29,7 +29,7 @@ def get_index() -> Index:
 @lru_cache
 def _ensure_settings() -> bool:
     """Apply searchable attributes once per worker process."""
-    task = get_index().update_searchable_attributes(["title", "text"])
+    task = get_index().update_searchable_attributes(["title", "description", "text"])
     get_client().wait_for_task(task.task_uid)
     return True
 
@@ -51,7 +51,7 @@ def search_documents(query: str, limit: int = 20) -> list[dict[str, Any]]:
             query,
             {
                 "limit": limit,
-                "attributesToRetrieve": ["id", "url", "title"],
+                "attributesToRetrieve": ["id", "url", "title", "description"],
             },
         )
     except Exception as exc:

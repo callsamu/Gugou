@@ -33,7 +33,8 @@ robots.txt and skips URLs disallowed for its user agent.
 
 After extracting a page, the extractor resolves the links it found and sends
 them back to the frontier over HTTP. It extracts text from `<article>` or
-`<main>` when present, ignoring header, nav, aside and footer chrome.
+`<main>` when present, ignoring header, nav, aside and footer chrome. The page
+title and meta description are captured separately.
 
 ## Layout
 

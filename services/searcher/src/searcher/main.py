@@ -25,6 +25,7 @@ def find(query: str, limit: int = 20) -> SearchResponse:
             id=str(hit.get("id", "")),
             url=hit.get("url"),
             title=hit.get("title"),
+            description=hit.get("description"),
         )
         for hit in hits
     ]
@@ -40,6 +41,7 @@ def index_document(payload: dict[str, Any]) -> dict[str, Any]:
             "id": doc_id,
             "url": document.url,
             "title": document.title or "",
+            "description": document.description or "",
             "text": document.text or "",
         }
     )

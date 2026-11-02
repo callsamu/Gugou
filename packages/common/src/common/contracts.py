@@ -17,6 +17,7 @@ class Extracted(BaseModel):
 
     url: str
     title: str | None = None
+    description: str | None = None
     text: str | None = None
     links: list[str] = Field(default_factory=list)
 
@@ -29,6 +30,7 @@ class SearchResult(BaseModel):
     id: str
     url: str | None = None
     title: str | None = None
+    description: str | None = None
 
 
 class SearchResponse(BaseModel):

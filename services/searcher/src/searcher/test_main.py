@@ -17,8 +17,13 @@ def test_find_builds_search_results(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_search(query: str, limit: int = 20) -> list[dict[str, Any]]:
         calls.append({"query": query, "limit": limit})
         return [
-            {"id": "id1", "url": "https://example.com/article", "title": "Example"},
-            {"id": "id2", "url": None, "title": None},
+            {
+                "id": "id1",
+                "url": "https://example.com/article",
+                "title": "Example",
+                "description": "Example summary",
+            },
+            {"id": "id2", "url": None, "title": None, "description": None},
         ]
 
     monkeypatch.setattr(main, "search_documents", fake_search)
@@ -33,6 +38,10 @@ def test_find_builds_search_results(monkeypatch: pytest.MonkeyPatch) -> None:
         None,
     ]
     assert [result.title for result in response.results] == ["Example", None]
+    assert [result.description for result in response.results] == [
+        "Example summary",
+        None,
+    ]
     assert calls == [{"query": "example", "limit": 5}]
 
 
@@ -57,6 +66,7 @@ def test_index_document_adds_to_meilisearch(monkeypatch: pytest.MonkeyPatch) -> 
     extracted = Extracted(
         url="https://example.com/article",
         title="Example",
+        description="Example summary",
         text="Hello world",
         links=[],
     )
@@ -68,6 +78,7 @@ def test_index_document_adds_to_meilisearch(monkeypatch: pytest.MonkeyPatch) -> 
             "id": result["id"],
             "url": extracted.url,
             "title": "Example",
+            "description": "Example summary",
             "text": "Hello world",
         }
     ]
