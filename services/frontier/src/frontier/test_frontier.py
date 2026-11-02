@@ -257,6 +257,63 @@ def test_force_bypasses_debug_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         frontier.stop()
 
 
+def test_pause_stops_consumption_until_resume(tmp_path: Path) -> None:
+    engine = _engine(tmp_path / "frontier.db")
+    processed: list[str] = []
+
+    def send(url: str) -> dict[str, Any]:
+        processed.append(url)
+        return {"url": url, "content_path": "/tmp/page.html"}
+
+    frontier = Frontier(engine=engine, send=send)
+    frontier.start()
+    try:
+        frontier.pause()
+        assert frontier.is_paused
+
+        assert frontier.add_urls([URL]) == 1
+        time.sleep(0.1)
+        assert processed == []
+        assert _state(engine, URL) is UrlState.PENDING
+
+        frontier.resume()
+        assert not frontier.is_paused
+        _wait_for_state(engine, URL, UrlState.COMPLETED)
+        assert processed == [URL]
+    finally:
+        frontier.stop()
+
+
+def test_api_pause_and_resume(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = _engine(tmp_path / "frontier.db")
+    test_frontier = Frontier(engine=engine, send=_send_ok)
+    monkeypatch.setattr(frontier_main, "frontier", test_frontier)
+
+    with TestClient(frontier_main.app) as client:
+        paused = cast(
+            Any,
+            client.post("/pause"),  # pyright: ignore[reportUnknownMemberType]
+        )
+        queued = cast(
+            Any,
+            client.post(  # pyright: ignore[reportUnknownMemberType]
+                "/urls",
+                json={"urls": [URL]},
+            ),
+        )
+        time.sleep(0.1)
+        assert _state(engine, URL) is UrlState.PENDING
+        resumed = cast(
+            Any,
+            client.post("/resume"),  # pyright: ignore[reportUnknownMemberType]
+        )
+        _wait_for_state(engine, URL, UrlState.COMPLETED)
+
+    assert paused.json() == {"paused": True}
+    assert queued.json() == {"queued": 1, "skipped": 0}
+    assert resumed.json() == {"paused": False}
+
+
 def test_pending_urls_are_reloaded_on_start(tmp_path: Path) -> None:
     engine = _engine(tmp_path / "frontier.db")
     with Session(engine) as session:

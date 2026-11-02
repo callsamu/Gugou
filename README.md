@@ -85,6 +85,8 @@ VITE_API_URL=http://localhost:8000 npm run dev
 | Method | Path              | Description                                     |
 | ------ | ----------------- | ----------------------------------------------- |
 | POST   | `/crawl`          | Add a URL to the frontier: `{"url": "https://example.com"}` |
+| POST   | `/pause`          | Pause frontier queue consumption                |
+| POST   | `/resume`         | Resume frontier queue consumption               |
 | GET    | `/search?q=...`   | Ask the searcher for pages with URLs and titles |
 | GET    | `/tasks/{id}`     | Celery task state and result                    |
 | GET    | `/healthz`        | Liveness probe                                  |
@@ -101,6 +103,8 @@ The frontier exposes its own small HTTP API on port 8001:
 | Method | Path       | Description                                           |
 | ------ | ---------- | ----------------------------------------------------- |
 | POST   | `/urls`    | Add URLs; `force: true` re-queues already-seen URLs   |
+| POST   | `/pause`   | Pause queue consumption; new URLs are still accepted  |
+| POST   | `/resume`  | Resume queue consumption                              |
 | GET    | `/healthz` | Liveness probe                                        |
 
 ## Configuration

@@ -49,3 +49,17 @@ def add_urls(request: AddUrlsRequest) -> AddUrlsResponse:
     """Add URLs to the frontier queue."""
     queued = frontier.add_urls([str(url) for url in request.urls], force=request.force)
     return AddUrlsResponse(queued=queued, skipped=len(request.urls) - queued)
+
+
+@app.post("/pause")
+def pause() -> dict[str, bool]:
+    """Pause queue consumption without rejecting new URLs."""
+    frontier.pause()
+    return {"paused": frontier.is_paused}
+
+
+@app.post("/resume")
+def resume() -> dict[str, bool]:
+    """Resume queue consumption."""
+    frontier.resume()
+    return {"paused": frontier.is_paused}

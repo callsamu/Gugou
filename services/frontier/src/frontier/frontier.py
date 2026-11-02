@@ -44,6 +44,8 @@ class Frontier:
         self._queue: asyncio.PriorityQueue[tuple[int, str | None]] = asyncio.PriorityQueue()
         self._origins: dict[str, int] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._resume: asyncio.Event | None = None
+        self._paused = threading.Event()
         self._thread: threading.Thread | None = None
         self._ready = threading.Event()
         self._db_lock = threading.RLock()
@@ -59,6 +61,7 @@ class Frontier:
         """Start the background loop and wait until it is ready."""
         if self._thread is not None:
             return
+        self._paused.clear()
         self._thread = threading.Thread(target=self._run, name="frontier", daemon=True)
         self._thread.start()
         if not self._ready.wait(timeout=5):
@@ -70,10 +73,36 @@ class Frontier:
         thread = self._thread
         if loop is None or thread is None:
             return
+        if self._resume is not None:
+            loop.call_soon_threadsafe(self._resume.set)
         loop.call_soon_threadsafe(self._queue.put_nowait, (-1, None))
         thread.join(timeout=5)
         self._loop = None
+        self._resume = None
         self._thread = None
+
+    @property
+    def is_paused(self) -> bool:
+        """Return True while queue consumption is paused."""
+        return self._paused.is_set()
+
+    def pause(self) -> None:
+        """Pause queue consumption; new URLs are still accepted."""
+        loop = self._loop
+        resume = self._resume
+        if loop is None or resume is None:
+            raise RuntimeError("frontier is not running")
+        self._paused.set()
+        loop.call_soon_threadsafe(resume.clear)
+
+    def resume(self) -> None:
+        """Resume queue consumption."""
+        loop = self._loop
+        resume = self._resume
+        if loop is None or resume is None:
+            raise RuntimeError("frontier is not running")
+        self._paused.clear()
+        loop.call_soon_threadsafe(resume.set)
 
     def add_urls(self, urls: list[str], *, force: bool = False) -> int:
         """Persist URLs as pending and enqueue them by insertion time.
@@ -124,6 +153,9 @@ class Frontier:
 
     async def _serve(self) -> None:
         self._loop = asyncio.get_running_loop()
+        resume = asyncio.Event()
+        resume.set()
+        self._resume = resume
         create_db(self.engine)
         for pending_url, created in self._pending_urls():
             origin = _origin(pending_url)
@@ -134,9 +166,11 @@ class Frontier:
         self._ready.set()
 
         while True:
+            await resume.wait()
             _, url = await self._queue.get()
             if url is None:
                 break
+            await resume.wait()
             try:
                 await self._process(url)
             except Exception:

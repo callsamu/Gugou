@@ -37,6 +37,37 @@ def test_api_healthz() -> None:
         assert response.json() == {"status": "ok"}
 
 
+def test_pause_and_resume_proxy_to_frontier(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+        calls.append({"url": url, **kwargs})
+        return httpx.Response(
+            200,
+            json={"paused": url.endswith("/pause")},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    with TestClient(app) as client:
+        paused = cast(
+            Any,
+            client.post("/pause"),  # pyright: ignore[reportUnknownMemberType]
+        )
+        resumed = cast(
+            Any,
+            client.post("/resume"),  # pyright: ignore[reportUnknownMemberType]
+        )
+
+    assert paused.json() == {"paused": True}
+    assert resumed.json() == {"paused": False}
+    assert [call["url"] for call in calls] == [
+        f"{settings.frontier_url}/pause",
+        f"{settings.frontier_url}/resume",
+    ]
+
+
 def test_crawl_requests_force_from_frontier(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
 

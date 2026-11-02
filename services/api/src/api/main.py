@@ -52,6 +52,31 @@ def crawl(request: CrawlRequest) -> dict[str, object]:
     return {"url": str(request.url), "queued": bool(payload.get("queued"))}
 
 
+def _post_frontier(path: str) -> dict[str, object]:
+    """POST to a frontier control endpoint and return its JSON response."""
+    try:
+        response = httpx.post(
+            f"{settings.frontier_url.rstrip('/')}{path}",
+            timeout=settings.frontier_timeout,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"frontier unavailable: {exc}") from exc
+    return cast(dict[str, object], response.json())
+
+
+@app.post("/pause")
+def pause() -> dict[str, object]:
+    """Pause frontier queue consumption while still accepting new URLs."""
+    return _post_frontier("/pause")
+
+
+@app.post("/resume")
+def resume() -> dict[str, object]:
+    """Resume frontier queue consumption."""
+    return _post_frontier("/resume")
+
+
 @app.get("/tasks/{task_id}")
 def task_status(task_id: str) -> dict[str, object]:
     result = cast(Any, AsyncResult(task_id, app=celery))
