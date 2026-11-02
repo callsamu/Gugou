@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
 from sqlalchemy import func
@@ -129,17 +129,21 @@ class Frontier:
                         logger.info("frontier: %s is already pending", url)
                         accepted += 1
                         continue
-                    self._set_state(url, UrlState.PENDING)
                 else:
                     if not force and settings.debug and self._url_count() >= DEBUG_URL_LIMIT:
                         logger.info("frontier: debug url limit of %d reached", DEBUG_URL_LIMIT)
                         break
-                    self._insert(url)
 
                 origin = _origin(url)
                 previous = self._origins.get(origin)
                 priority = created if previous is None else max(created, previous + ORIGIN_DELAY_NS)
                 self._origins[origin] = priority
+
+                if existing is not None:
+                    self._set_state(url, UrlState.PENDING, priority=priority)
+                else:
+                    self._insert(url, priority)
+
                 queued.append((priority, url))
                 accepted += 1
 
@@ -157,10 +161,11 @@ class Frontier:
         resume.set()
         self._resume = resume
         create_db(self.engine)
-        for pending_url, created in self._pending_urls():
+        for pending_url, priority in self._pending_urls():
             origin = _origin(pending_url)
             previous = self._origins.get(origin)
-            priority = created if previous is None else max(created, previous + ORIGIN_DELAY_NS)
+            if previous is not None and priority <= previous:
+                priority = previous + ORIGIN_DELAY_NS
             self._origins[origin] = priority
             self._queue.put_nowait((priority, pending_url))
         self._ready.set()
@@ -198,13 +203,38 @@ class Frontier:
         )
         return cast(dict[str, Any], result.get(timeout=DOWNLOAD_TASK_TIMEOUT))
 
+    def list_urls(
+        self,
+        *,
+        status: UrlState | None = None,
+        order_by: Literal["priority", "createdAt"] = "createdAt",
+        order: Literal["asc", "desc"] = "asc",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Url]:
+        """Return stored URLs, optionally filtered and ordered."""
+        with self._db_lock, Session(self.engine) as session:
+            statement = select(Url)
+            if status is not None:
+                statement = statement.where(Url.state == status)
+            order_column = col(Url.priority) if order_by == "priority" else col(Url.createdAt)
+            statement = statement.order_by(
+                order_column.asc() if order == "asc" else order_column.desc()
+            )
+            statement = statement.offset(offset).limit(limit)
+            return list(session.exec(statement).all())
+
     def _pending_urls(self) -> list[tuple[str, int]]:
         with self._db_lock, Session(self.engine) as session:
             records = session.exec(
                 select(Url).where(Url.state == UrlState.PENDING).order_by(col(Url.createdAt))
             ).all()
         return [
-            (record.url, int(record.createdAt.timestamp() * 1_000_000_000)) for record in records
+            (
+                record.url,
+                record.priority or int(record.createdAt.timestamp() * 1_000_000_000),
+            )
+            for record in records
         ]
 
     def _get(self, url: str) -> Url | None:
@@ -215,7 +245,7 @@ class Frontier:
         with Session(self.engine) as session:
             return int(session.exec(select(func.count()).select_from(Url)).one())
 
-    def _insert(self, url: str) -> None:
+    def _insert(self, url: str, priority: int) -> None:
         parts = urlsplit(url)
         with Session(self.engine) as session:
             session.add(
@@ -223,13 +253,14 @@ class Frontier:
                     url_hash=hash_url(url),
                     url=url,
                     host=parts.hostname or parts.netloc,
+                    priority=priority,
                     state=UrlState.PENDING,
                 )
             )
             session.commit()
         logger.info("frontier: saved url %s (state=%s)", url, UrlState.PENDING.value)
 
-    def _set_state(self, url: str, state: UrlState) -> None:
+    def _set_state(self, url: str, state: UrlState, *, priority: int | None = None) -> None:
         with self._db_lock, Session(self.engine) as session:
             record = session.get(Url, hash_url(url))
             if record is None:
@@ -239,6 +270,8 @@ class Frontier:
                     url=url,
                     host=parts.hostname or parts.netloc,
                 )
+            if priority is not None:
+                record.priority = priority
             record.state = state
             session.add(record)
             session.commit()

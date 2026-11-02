@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -257,6 +258,98 @@ def test_force_bypasses_debug_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         frontier.stop()
 
 
+def test_list_urls_filters_and_orders(tmp_path: Path) -> None:
+    engine = _engine(tmp_path / "frontier.db")
+    now = datetime.now(UTC)
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Url(
+                    url_hash=hash_url(URL),
+                    url=URL,
+                    host="example.com",
+                    state=UrlState.COMPLETED,
+                    priority=30,
+                    createdAt=now,
+                ),
+                Url(
+                    url_hash=hash_url(OTHER_URL),
+                    url=OTHER_URL,
+                    host="example.com",
+                    state=UrlState.FAILED,
+                    priority=20,
+                    createdAt=now + timedelta(seconds=1),
+                ),
+                Url(
+                    url_hash=hash_url(OTHER_ORIGIN_URL),
+                    url=OTHER_ORIGIN_URL,
+                    host="other.example.com",
+                    state=UrlState.PENDING,
+                    priority=10,
+                    createdAt=now + timedelta(seconds=2),
+                ),
+            ]
+        )
+        session.commit()
+
+    frontier = Frontier(engine=engine)
+
+    completed = frontier.list_urls(status=UrlState.COMPLETED)
+    assert [record.url for record in completed] == [URL]
+
+    by_priority = frontier.list_urls(order_by="priority")
+    assert [record.url for record in by_priority] == [
+        OTHER_ORIGIN_URL,
+        OTHER_URL,
+        URL,
+    ]
+
+    by_priority_desc = frontier.list_urls(order_by="priority", order="desc")
+    assert [record.url for record in by_priority_desc] == [URL, OTHER_URL, OTHER_ORIGIN_URL]
+
+    by_created = frontier.list_urls(order_by="createdAt")
+    assert [record.url for record in by_created] == [URL, OTHER_URL, OTHER_ORIGIN_URL]
+
+
+def test_api_lists_filtered_urls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = _engine(tmp_path / "frontier.db")
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Url(
+                    url_hash=hash_url(URL),
+                    url=URL,
+                    host="example.com",
+                    state=UrlState.COMPLETED,
+                    priority=2,
+                ),
+                Url(
+                    url_hash=hash_url(OTHER_URL),
+                    url=OTHER_URL,
+                    host="example.com",
+                    state=UrlState.FAILED,
+                    priority=1,
+                ),
+            ]
+        )
+        session.commit()
+
+    test_frontier = Frontier(engine=engine, send=_send_ok)
+    monkeypatch.setattr(frontier_main, "frontier", test_frontier)
+
+    with TestClient(frontier_main.app) as client:
+        response = cast(
+            Any,
+            client.get(  # pyright: ignore[reportUnknownMemberType]
+                "/urls",
+                params={"status": "completed", "order_by": "priority"},
+            ),
+        )
+
+    assert response.status_code == 200
+    assert [item["url"] for item in response.json()] == [URL]
+
+
 def test_pause_stops_consumption_until_resume(tmp_path: Path) -> None:
     engine = _engine(tmp_path / "frontier.db")
     processed: list[str] = []
@@ -294,6 +387,10 @@ def test_api_pause_and_resume(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
             Any,
             client.post("/pause"),  # pyright: ignore[reportUnknownMemberType]
         )
+        paused_status = cast(
+            Any,
+            client.get("/queue"),  # pyright: ignore[reportUnknownMemberType]
+        )
         queued = cast(
             Any,
             client.post(  # pyright: ignore[reportUnknownMemberType]
@@ -307,11 +404,17 @@ def test_api_pause_and_resume(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
             Any,
             client.post("/resume"),  # pyright: ignore[reportUnknownMemberType]
         )
+        resumed_status = cast(
+            Any,
+            client.get("/queue"),  # pyright: ignore[reportUnknownMemberType]
+        )
         _wait_for_state(engine, URL, UrlState.COMPLETED)
 
     assert paused.json() == {"paused": True}
+    assert paused_status.json() == {"paused": True}
     assert queued.json() == {"queued": 1, "skipped": 0}
     assert resumed.json() == {"paused": False}
+    assert resumed_status.json() == {"paused": False}
 
 
 def test_pending_urls_are_reloaded_on_start(tmp_path: Path) -> None:

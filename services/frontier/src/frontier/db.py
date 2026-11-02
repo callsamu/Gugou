@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from enum import Enum, StrEnum
 from functools import lru_cache
 
-from sqlalchemy import Column
+from sqlalchemy import Column, inspect, text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.engine import Engine
 from sqlmodel import Field, SQLModel, create_engine
@@ -40,6 +40,13 @@ def get_engine() -> Engine:
 
 def create_db(eng: Engine) -> None:
     SQLModel.metadata.create_all(eng)
+    columns = {column["name"] for column in inspect(eng).get_columns("url")}
+    if "priority" not in columns:
+        with eng.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE url ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+            )
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_url_priority ON url (priority)"))
 
 
 class UrlState(StrEnum):
@@ -61,6 +68,7 @@ class Url(SQLModel, table=True):
     url_hash: str = Field(primary_key=True)
     url: str = Field(unique=True)
     host: str = Field(index=True)
+    priority: int = Field(default=0, index=True)
     state: UrlState = Field(
         default=UrlState.PENDING,
         sa_column=Column(

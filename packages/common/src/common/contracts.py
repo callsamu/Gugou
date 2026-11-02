@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 
@@ -20,6 +22,20 @@ class Extracted(BaseModel):
     description: str | None = None
     text: str | None = None
     links: list[str] = Field(default_factory=list)
+
+
+class StoredUrl(BaseModel):
+    """A URL stored in the frontier database."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str
+    url_hash: str
+    host: str
+    state: str
+    priority: int
+    createdAt: datetime
+    updatedAt: datetime
 
 
 class SearchResult(BaseModel):

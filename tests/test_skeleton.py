@@ -37,6 +37,82 @@ def test_api_healthz() -> None:
         assert response.json() == {"status": "ok"}
 
 
+def test_list_urls_proxies_to_frontier(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
+        calls.append({"url": url, **kwargs})
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "url": "https://example.com/page",
+                    "url_hash": "abc",
+                    "host": "example.com",
+                    "state": "pending",
+                    "priority": 123,
+                    "createdAt": "2026-01-01T00:00:00+00:00",
+                    "updatedAt": "2026-01-01T00:00:00+00:00",
+                }
+            ],
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    with TestClient(app) as client:
+        response = cast(
+            Any,
+            client.get(  # pyright: ignore[reportUnknownMemberType]
+                "/urls",
+                params={
+                    "status": "pending",
+                    "order_by": "priority",
+                    "order": "desc",
+                    "limit": 10,
+                    "offset": 5,
+                },
+            ),
+        )
+
+    assert response.status_code == 200
+    assert calls[0]["url"] == f"{settings.frontier_url}/urls"
+    assert calls[0]["params"] == {
+        "order_by": "priority",
+        "order": "desc",
+        "limit": 10,
+        "offset": 5,
+        "status": "pending",
+    }
+    payload = response.json()
+    assert payload[0]["url"] == "https://example.com/page"
+    assert payload[0]["priority"] == 123
+    assert payload[0]["state"] == "pending"
+
+
+def test_queue_status_proxies_to_frontier(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
+        calls.append({"url": url, **kwargs})
+        return httpx.Response(
+            200,
+            json={"paused": True},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    with TestClient(app) as client:
+        response = cast(
+            Any,
+            client.get("/queue"),  # pyright: ignore[reportUnknownMemberType]
+        )
+
+    assert response.json() == {"paused": True}
+    assert calls[0]["url"] == f"{settings.frontier_url}/queue"
+
+
 def test_pause_and_resume_proxy_to_frontier(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
 

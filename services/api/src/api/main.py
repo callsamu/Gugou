@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 from celery.exceptions import TimeoutError as CeleryTimeoutError  # pyright: ignore[reportMissingTypeStubs]
@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from common.celery_app import create_app
 from common.config import settings
-from common.contracts import CrawlRequest, SearchResponse
+from common.contracts import CrawlRequest, SearchResponse, StoredUrl
 from common.queues import QUEUES, TaskNames
 
 celery = create_app(
@@ -52,11 +52,54 @@ def crawl(request: CrawlRequest) -> dict[str, object]:
     return {"url": str(request.url), "queued": bool(payload.get("queued"))}
 
 
+@app.get("/urls")
+def list_urls(
+    status: Literal["pending", "completed", "failed"] | None = None,
+    order_by: Literal["priority", "createdAt"] = "createdAt",
+    order: Literal["asc", "desc"] = "asc",
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[StoredUrl]:
+    """List URLs stored in the frontier."""
+    params: dict[str, str | int] = {
+        "order_by": order_by,
+        "order": order,
+        "limit": limit,
+        "offset": offset,
+    }
+    if status is not None:
+        params["status"] = status
+    try:
+        response = httpx.get(
+            f"{settings.frontier_url.rstrip('/')}/urls",
+            params=params,
+            timeout=settings.frontier_timeout,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"frontier unavailable: {exc}") from exc
+    return [StoredUrl.model_validate(item) for item in response.json()]
+
+
 def _post_frontier(path: str) -> dict[str, object]:
     """POST to a frontier control endpoint and return its JSON response."""
     try:
         response = httpx.post(
             f"{settings.frontier_url.rstrip('/')}{path}",
+            timeout=settings.frontier_timeout,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"frontier unavailable: {exc}") from exc
+    return cast(dict[str, object], response.json())
+
+
+@app.get("/queue")
+def queue_status() -> dict[str, object]:
+    """Return whether the frontier queue is paused."""
+    try:
+        response = httpx.get(
+            f"{settings.frontier_url.rstrip('/')}/queue",
             timeout=settings.frontier_timeout,
         )
         response.raise_for_status()
