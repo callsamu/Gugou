@@ -409,6 +409,8 @@ dependencies = [
     { name = "meilisearch" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "sqlalchemy" },
+    { name = "sqlmodel" },
 ]
 
 [package.metadata]
@@ -417,6 +419,8 @@ requires-dist = [
     { name = "meilisearch", specifier = ">=0.43" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pydantic-settings", specifier = ">=2.5" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "sqlmodel", specifier = ">=0.0.48" },
 ]
 
 [[package]]

@@ -14,8 +14,7 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
 
-    frontier_db_url: str = "sqlite:///frontier.db"
-    extractor_db_url: str = "sqlite:///extractor.db"
+    database_url: str = "sqlite:///gugou.db"
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str | None = None
     celery_result_backend: str | None = None

@@ -1,32 +1,16 @@
-"""Extractor-owned database: processed content records."""
+"""Extractor-owned database table: processed content records."""
 
 from __future__ import annotations
 
 import hashlib
-from functools import lru_cache
 
 from sqlalchemy.engine import Engine
-from sqlmodel import Field, SQLModel, create_engine
-
-from common.config import settings
+from sqlmodel import Field, SQLModel
 
 
 def hash_url(url: str) -> str:
     """Return the primary key used for a URL."""
     return hashlib.sha256(url.encode()).hexdigest()
-
-
-@lru_cache
-def get_engine() -> Engine:
-    """Build the SQLAlchemy engine described by the shared settings."""
-    connect_args: dict[str, object] = {}
-    if settings.extractor_db_url.startswith("sqlite"):
-        connect_args["check_same_thread"] = False
-    return create_engine(
-        settings.extractor_db_url,
-        echo=settings.log_level.upper() == "DEBUG",
-        connect_args=connect_args,
-    )
 
 
 def create_db(eng: Engine) -> None:
@@ -40,6 +24,8 @@ class Content(SQLModel, table=True):
     is indexed so we can recognise an already-processed body arriving
     from a different URL and skip it.
     """
+
+    __tablename__ = "extractor_content"
 
     url_hash: str = Field(primary_key=True)
     content_path: str

@@ -14,6 +14,7 @@ from common.config import settings
 from common.contracts import Extracted
 from common.queues import QUEUES, TaskNames
 from extractor import main
+from extractor.bloom import BloomFilter
 from extractor.db import Content, create_db, hash_url
 from extractor.extractor import Extractor
 
@@ -162,7 +163,11 @@ def test_forward_links_posts_to_the_frontier(monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setattr(httpx, "post", fake_post)
 
-    main.forward_links(URL, ["/one", "https://example.com/two", "/one", "mailto:hi@example.com"])
+    main.forward_links(
+        URL,
+        ["/one", "https://example.com/two", "/one", "mailto:hi@example.com"],
+        seen=BloomFilter(capacity=100, error_rate=0.01),
+    )
 
     assert calls == [
         {
@@ -171,6 +176,58 @@ def test_forward_links_posts_to_the_frontier(monkeypatch: pytest.MonkeyPatch) ->
             "timeout": settings.frontier_timeout,
         }
     ]
+
+
+def test_forward_links_skips_urls_forwarded_before(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+        calls.append({"url": url, **kwargs})
+        return httpx.Response(
+            202,
+            json={"queued": len(kwargs["json"]["urls"]), "skipped": 0},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    seen = BloomFilter(capacity=1_000, error_rate=0.01)
+
+    main.forward_links(URL, ["/one", "/two"], seen=seen)
+    main.forward_links(URL, ["https://example.com/one", "/three"], seen=seen)
+    main.forward_links(URL, ["/one", "/two"], seen=seen)
+
+    assert [call["json"]["urls"] for call in calls] == [
+        ["https://example.com/one", "https://example.com/two"],
+        ["https://example.com/three"],
+    ]
+
+
+def test_forward_links_retries_urls_after_a_failed_post(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    fail = True
+    target = "https://example.com/one"
+
+    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+        calls.append({"url": url, **kwargs})
+        status = 503 if fail else 202
+        return httpx.Response(status, json={}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    seen = BloomFilter(capacity=1_000, error_rate=0.01)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        main.forward_links(URL, ["/one"], seen=seen)
+
+    assert target not in seen
+
+    fail = False
+    main.forward_links(URL, ["/one"], seen=seen)
+
+    assert len(calls) == 2
+    assert calls[1]["json"] == {"urls": [target]}
+    assert target in seen
 
 
 def test_run_forwards_and_queues_links(monkeypatch: pytest.MonkeyPatch) -> None:

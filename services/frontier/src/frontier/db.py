@@ -1,18 +1,15 @@
-"""Frontier-owned database: URL records and engine setup."""
+"""Frontier-owned database table: URL records."""
 
 from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime
 from enum import Enum, StrEnum
-from functools import lru_cache
 
 from sqlalchemy import Column, inspect, text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.engine import Engine
-from sqlmodel import Field, SQLModel, create_engine
-
-from common.config import settings
+from sqlmodel import Field, SQLModel
 
 
 def _utcnow() -> datetime:
@@ -24,29 +21,19 @@ def hash_url(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()
 
 
-@lru_cache
-def get_engine() -> Engine:
-    """Build the SQLAlchemy engine described by the shared settings."""
-    connect_args: dict[str, object] = {}
-    if settings.frontier_db_url.startswith("sqlite"):
-        # The API and the frontier thread use separate sessions.
-        connect_args["check_same_thread"] = False
-    return create_engine(
-        settings.frontier_db_url,
-        echo=settings.log_level.upper() == "DEBUG",
-        connect_args=connect_args,
-    )
-
-
 def create_db(eng: Engine) -> None:
     SQLModel.metadata.create_all(eng)
-    columns = {column["name"] for column in inspect(eng).get_columns("url")}
+    columns = {column["name"] for column in inspect(eng).get_columns("frontier_url")}
     if "priority" not in columns:
         with eng.begin() as connection:
             connection.execute(
-                text("ALTER TABLE url ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+                text("ALTER TABLE frontier_url ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
             )
-            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_url_priority ON url (priority)"))
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_frontier_url_priority ON frontier_url (priority)"
+                )
+            )
 
 
 class UrlState(StrEnum):
@@ -64,6 +51,8 @@ def _url_state_values(enum_cls: type[Enum]) -> list[str]:
 
 class Url(SQLModel, table=True):
     """A URL known to the frontier."""
+
+    __tablename__ = "frontier_url"
 
     url_hash: str = Field(primary_key=True)
     url: str = Field(unique=True)

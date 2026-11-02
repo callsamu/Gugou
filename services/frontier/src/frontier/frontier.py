@@ -16,8 +16,9 @@ from sqlmodel import Session, col, select
 
 from common.celery_app import create_app
 from common.config import settings
+from common.db import get_engine
 from common.queues import QUEUES, TaskNames
-from frontier.db import Url, UrlState, create_db, get_engine, hash_url
+from frontier.db import Url, UrlState, create_db, hash_url
 
 logger = logging.getLogger(__name__)
 

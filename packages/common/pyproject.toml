@@ -8,6 +8,8 @@ dependencies = [
     "meilisearch>=0.43",
     "pydantic>=2.9",
     "pydantic-settings>=2.5",
+    "sqlalchemy>=2.0",
+    "sqlmodel>=0.0.48",
 ]
 
 [build-system]

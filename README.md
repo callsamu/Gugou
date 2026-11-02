@@ -1,8 +1,8 @@
 # Gugou
 
 Microservices scaffold: an HTTP API feeds a URL frontier, which drives a
-Celery pipeline of **downloader → extractor → searcher**, with Redis as broker
-and Meilisearch as the search engine.
+Celery pipeline of **downloader → extractor → searcher**, with Redis as broker,
+Meilisearch as the search engine and one shared SQLite database.
 
 ```
              POST /crawl
@@ -23,18 +23,24 @@ Each service is independently deployable. Celery workers publish well-known task
 names (`common.queues.TaskNames`) onto well-known queues, so any stage can be
 replaced or scaled on its own.
 
-The frontier owns the URL database and an in-memory priority queue ordered by
-insertion time. It sends one download task at a time and records each URL as
-pending, completed or failed. URLs from the same origin are scheduled 15 seconds
-apart.
+The frontier owns the `frontier_url` table and an in-memory priority queue
+ordered by insertion time. It sends one download task at a time and records each
+URL as pending, completed or failed. URLs from the same origin are scheduled 15
+seconds apart.
 
 Before fetching a page, the downloader fetches and caches the origin's
 robots.txt and skips URLs disallowed for its user agent.
 
-After extracting a page, the extractor resolves the links it found and sends
-them back to the frontier over HTTP. It extracts text from `<article>` or
-`<main>` when present, ignoring header, nav, aside and footer chrome. The page
-title and meta description are captured separately.
+After extracting a page, the extractor records its content hash in the
+`extractor_content` table, resolves the links it found and sends them back to the
+frontier over HTTP. It extracts text from `<article>` or `<main>` when present,
+ignoring header, nav, aside and footer chrome. The page title and meta
+description are captured separately.
+
+The frontier and extractor share `DATABASE_URL`. Their tables are namespaced by
+service so one SQLite file can hold both without collisions. Before forwarding
+links, the extractor filters them through a small in-memory Bloom filter of URLs
+it has already sent, so duplicates do not trigger frontier database lookups.
 
 ## Layout
 
@@ -42,9 +48,9 @@ title and meta description are captured separately.
 pyproject.toml            uv workspace root (dev tooling, ruff/mypy/pytest)
 packages/common/          shared settings, contracts, Celery factory, Meilisearch client
 services/api/             FastAPI HTTP layer
-services/frontier/        URL database, priority queue and download dispatch
+services/frontier/        URL table, priority queue and download dispatch
 services/downloader/      fetches URLs, stores raw HTML
-services/extractor/       parses HTML, sends discovered links to the frontier
+services/extractor/       content table, parses HTML and forwards found links
 services/searcher/        indexes document text and answers Meilisearch queries
 frontend/                 Preact + Tailwind search UI
 Dockerfile                one image, SERVICE build arg selects the member
@@ -123,7 +129,9 @@ The frontier exposes its own small HTTP API on port 8001:
 All settings live in `packages/common/src/common/config.py` and are read from
 the environment (see `.env.example`): `REDIS_URL`, `MEILISEARCH_URL`,
 `MEILISEARCH_API_KEY`, `MEILISEARCH_INDEX`, `RAW_STORAGE_DIR`, `DOWNLOAD_TIMEOUT`,
-`SEARCH_TIMEOUT`, `FRONTIER_URL`, `FRONTIER_DB_URL`, …
+`SEARCH_TIMEOUT`, `FRONTIER_URL`, `DATABASE_URL`, … The frontier and extractor
+share `DATABASE_URL` and own separate tables (`frontier_url` and
+`extractor_content`).
 
 ## Quality gates
 

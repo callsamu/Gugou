@@ -13,8 +13,10 @@ from sqlmodel import Session, select
 from common.celery_app import create_app
 from common.config import settings
 from common.contracts import Extracted
+from common.db import get_engine
 from common.queues import QUEUES, TaskNames
-from extractor.db import Content, create_db, get_engine, hash_url
+from extractor.bloom import BloomFilter
+from extractor.db import Content, create_db, hash_url
 from extractor.extractor import Extractor
 
 logger = logging.getLogger(__name__)
@@ -22,6 +24,13 @@ logger = logging.getLogger(__name__)
 app = create_app("extractor", QUEUES["extract"])
 
 HTTP_SCHEMES = frozenset({"http", "https"})
+
+#: URLs already forwarded by this worker process. A Bloom filter keeps the
+#: common duplicate case in memory instead of asking the frontier to query
+#: its database for every link.
+FORWARDED_URL_CAPACITY = 100_000
+FORWARDED_URL_ERROR_RATE = 0.001
+_forwarded_urls = BloomFilter(FORWARDED_URL_CAPACITY, FORWARDED_URL_ERROR_RATE)
 
 
 def links_to_fetch(url: str, links: list[str]) -> list[str]:
@@ -42,9 +51,17 @@ def links_to_fetch(url: str, links: list[str]) -> list[str]:
     return targets
 
 
-def forward_links(url: str, links: list[str]) -> None:
-    """Send the links found in ``url`` to the frontier."""
-    targets = links_to_fetch(url, links)
+def forward_links(
+    url: str,
+    links: list[str],
+    seen: BloomFilter | None = None,
+) -> None:
+    """Send links found in ``url`` that this worker has not forwarded yet."""
+    bloom = _forwarded_urls if seen is None else seen
+    candidates = links_to_fetch(url, links)
+    targets = [target for target in candidates if target not in bloom]
+    if skipped := len(candidates) - len(targets):
+        logger.debug("skipped %d link(s) already forwarded by this worker", skipped)
     if not targets:
         return
 
@@ -59,6 +76,9 @@ def forward_links(url: str, links: list[str]) -> None:
         logger.error("failed to send links from %s to the frontier: %s", url, exc)
         raise
 
+    # Only remember links after the frontier accepted them, so a failed POST
+    # can be retried without the filter hiding its URLs.
+    bloom.add_many(targets)
     logger.info("sent %d link(s) from %s to the frontier", len(targets), url)
 
 
