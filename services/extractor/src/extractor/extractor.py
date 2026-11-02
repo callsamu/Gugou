@@ -55,21 +55,24 @@ class Extractor:
         description = _meta_content(soup, "name", "description") or _meta_content(
             soup, "property", "og:description"
         )
-        root = soup.find("article") or soup.find("main") or soup
+        roots = soup.find_all("article") or soup.find_all("main") or [soup]
         chunks: list[str] = []
-        for node in root.select(CONTENT_SELECTOR):
-            for br in node.find_all("br"):
-                br.replace_with(" ")
-            text = " ".join(node.get_text("").split())
-            if text:
-                chunks.append(text)
+        links: list[str] = []
+        for root in roots:
+            for node in root.select(CONTENT_SELECTOR):
+                for br in node.find_all("br"):
+                    br.replace_with(" ")
+                text = " ".join(node.get_text("").split())
+                if text:
+                    chunks.append(text)
+            links.extend(str(anchor["href"]) for anchor in root.find_all("a", href=True))
 
         return Extracted(
             url=url,
             title=soup.title.get_text(strip=True) if soup.title else None,
             description=description,
             text="\n".join(chunks),
-            links=[str(anchor["href"]) for anchor in root.find_all("a", href=True)],
+            links=links,
         )
 
     def content_hash(self, path: str | Path | None) -> str | None:

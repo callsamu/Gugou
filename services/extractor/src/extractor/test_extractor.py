@@ -98,6 +98,36 @@ def test_extract_prefers_article_and_ignores_chrome() -> None:
     assert extracted.links == ["/article"]
 
 
+def test_extract_joins_multiple_articles() -> None:
+    html = """
+    <body>
+      <main>
+        <article><h1>First</h1><p>One</p><a href="/one">one</a></article>
+        <article><h1>Second</h1><p>Two</p><a href="/two">two</a></article>
+      </main>
+    </body>
+    """
+
+    extracted = Extractor().extract(URL, html)
+
+    assert extracted.text == "First\nOne\nSecond\nTwo"
+    assert extracted.links == ["/one", "/two"]
+
+
+def test_extract_joins_multiple_main_elements() -> None:
+    html = """
+    <body>
+      <main><h1>First</h1><p>One</p><a href="/one">one</a></main>
+      <main><h1>Second</h1><p>Two</p><a href="/two">two</a></main>
+    </body>
+    """
+
+    extracted = Extractor().extract(URL, html)
+
+    assert extracted.text == "First\nOne\nSecond\nTwo"
+    assert extracted.links == ["/one", "/two"]
+
+
 def test_extract_falls_back_to_main() -> None:
     html = """
     <body>
